@@ -780,10 +780,10 @@ MODULE collisions
                HAS_REACTED(IND2) = .TRUE.
 
                ! Rimuovere commento per avere avviso
-               IF (P_REACT .GT. 1.) THEN
+               !IF (P_REACT .GT. 1.) THEN
                   !WRITE(*,*) 'Attention => this was a bad MCC collision! P_REACT = ', P_REACT
-                  TIMESTEP_REAC = TIMESTEP_REAC + 1
-               END IF
+                  !TIMESTEP_REAC = TIMESTEP_REAC + 1
+               !END IF
 
 
                !WRITE(*,*) 'Reacting!'
@@ -1346,9 +1346,9 @@ MODULE collisions
                TIMESTEP_COLL = TIMESTEP_COLL + 1
 
                ! Rimuovere commento per avere avviso
-               IF (P_COLL .GT. 1.) THEN
-                  WRITE(*,*) 'Attention => this was a bad MCC collision!!!'
-               END IF
+               !IF (P_COLL .GT. 1.) THEN
+                  !WRITE(*,*) 'Attention => this was a bad MCC collision!!!'
+               !END IF
 
                C1(1) = particles(JP1)%VX
                C1(2) = particles(JP1)%VY
@@ -1740,9 +1740,9 @@ MODULE collisions
                   TIMESTEP_REAC = TIMESTEP_REAC + 1
 
                   ! Rimuovere commento per avere avviso
-                  IF (P_CUMULATED .GT. 1.) THEN
-                     WRITE(*,*) 'Attention => this was a bad MCC collision!!!'
-                  END IF
+                  !IF (P_CUMULATED .GT. 1.) THEN
+                     !WRITE(*,*) 'Attention => this was a bad MCC collision!!!'
+                  !END IF
 
                   !WRITE(*,*) 'Reacting!'
                   ! React

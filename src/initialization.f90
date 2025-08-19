@@ -26,6 +26,7 @@ MODULE initialization
    USE tools
    USE grid_and_partition
    USE mt19937_64
+   USE secondary_electron_emission
 
    IMPLICIT NONE
 
@@ -45,7 +46,7 @@ MODULE initialization
       INTEGER            :: ReasonEOF
 
       CHARACTER*512      :: MIXTURE_DEFINITION, VSS_PARAMS_FILENAME, LINESOURCE_DEFINITION, WALL_DEFINITION, MCC_BG_FILENAME
-      CHARACTER*512      :: BC_DEFINITION, SOLENOID_DEFINITION, MAGNET_DEFINITION
+      CHARACTER*512      :: BC_DEFINITION, SOLENOID_DEFINITION, MAGNET_DEFINITION, SEE_BOUNDARY_DEFINITION
       CHARACTER*64       :: MIX_BOUNDINJECT_NAME, DSMC_COLL_MIX_NAME, MCC_BG_MIX_NAME, PIC_TYPE_STRING, PARTITION_STYLE_STRING, &
       COLLISION_TYPE_STRING, REMOVE_MIX_NAME
 
@@ -87,6 +88,18 @@ MODULE initialization
             READ(in1,*) WALL_REACTIONS_FILENAME
             CALL READ_WALL_REACTIONS(WALL_REACTIONS_FILENAME)
          END IF
+
+         ! SEE (Secondary Electron Emission) configuration
+         IF (line=='SEE_enabled:')             READ(in1,*) BOOL_SEE_ENABLED
+         IF (line=='SEE_materials_file:') THEN
+            READ(in1,*) SEE_MATERIALS_FILENAME
+            CALL READ_SEE_MATERIALS(SEE_MATERIALS_FILENAME)
+         END IF
+         IF (line=='SEE_boundary_mapping:') THEN
+            READ(in1,'(A)') SEE_BOUNDARY_DEFINITION
+            CALL DEF_SEE_BOUNDARY_MAPPING(SEE_BOUNDARY_DEFINITION)
+         END IF
+         IF (line=='SEE_stats_output:')        READ(in1,*) SEE_STATS_SAVE_PATH
          IF (line=='Number_of_cells:')         READ(in1,*) NX, NY, NZ
 
          IF (line=='Grid_file:') THEN
@@ -2769,6 +2782,88 @@ MODULE initialization
       WRITE(*,*) 'Done reading.'
 
    END SUBROUTINE READ_MCC_BACKGROUND_FILE
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! SUBROUTINE DEF_SEE_BOUNDARY_MAPPING -> Define SEE boundary mapping     !
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   SUBROUTINE DEF_SEE_BOUNDARY_MAPPING(DEFINITION)
+
+      IMPLICIT NONE
+
+      CHARACTER(LEN=*), INTENT(IN) :: DEFINITION
+      CHARACTER(LEN=80), DIMENSION(:), ALLOCATABLE :: STRARRAY
+      CHARACTER(LEN=64) :: BOUNDARY_NAME
+      INTEGER :: BOUNDARY_ID, WALL_ID, MATERIAL_ID, IOS, N_STR
+      LOGICAL :: ENABLED, USE_NAME
+      TYPE(SEE_BOUNDARY_MAPPING), DIMENSION(:), ALLOCATABLE :: TEMP_SEE_BOUNDARIES
+
+      ! Parse the definition string supporting both name and ID formats:
+      ! Format 1 (name): "boundary_name wall_id material_id enabled"
+      ! Example: "anode -1 1 T" (anode boundary, no wall, material 1, enabled)
+      ! Format 2 (ID): "boundary_id wall_id material_id enabled" 
+      ! Example: "1 -1 1 T" (boundary 1, no wall, material 1, enabled)
+      
+      CALL SPLIT_STR(TRIM(DEFINITION), ' ', STRARRAY, N_STR)
+
+      IF (N_STR < 4) THEN
+         CALL ERROR_ABORT('Error: SEE boundary mapping requires 4 parameters: boundary_name/id wall_id material_id enabled')
+      END IF
+
+      ! Try to read first parameter as integer (backward compatibility)
+      READ(STRARRAY(1), '(I10)', IOSTAT=IOS) BOUNDARY_ID
+      IF (IOS == 0) THEN
+         ! Successfully read as integer - use ID format
+         USE_NAME = .FALSE.
+         BOUNDARY_NAME = ''
+      ELSE
+         ! Failed to read as integer - use name format
+         USE_NAME = .TRUE.
+         BOUNDARY_NAME = TRIM(STRARRAY(1))
+         BOUNDARY_ID = -1  ! Not used when using names
+      END IF
+
+      READ(STRARRAY(2), '(I10)') WALL_ID
+      READ(STRARRAY(3), '(I10)') MATERIAL_ID
+      read(STRARRAY(4), *) ENABLED
+
+      ! Validate material ID
+      IF (MATERIAL_ID < 1 .OR. MATERIAL_ID > N_SEE_MATERIALS) THEN
+         CALL ERROR_ABORT('Error: SEE material ID out of range in boundary mapping')
+      END IF
+
+      ! Add to boundary mapping array
+      IF (ALLOCATED(SEE_BOUNDARY_MAP)) THEN
+         ALLOCATE(TEMP_SEE_BOUNDARIES(N_SEE_BOUNDARIES+1))
+         TEMP_SEE_BOUNDARIES(1:N_SEE_BOUNDARIES) = SEE_BOUNDARY_MAP(1:N_SEE_BOUNDARIES)
+         CALL MOVE_ALLOC(TEMP_SEE_BOUNDARIES, SEE_BOUNDARY_MAP)
+      ELSE
+         ALLOCATE(SEE_BOUNDARY_MAP(1))
+      END IF
+
+      N_SEE_BOUNDARIES = N_SEE_BOUNDARIES + 1
+
+      SEE_BOUNDARY_MAP(N_SEE_BOUNDARIES)%BOUNDARY_NAME = BOUNDARY_NAME
+      SEE_BOUNDARY_MAP(N_SEE_BOUNDARIES)%BOUNDARY_ID = BOUNDARY_ID
+      SEE_BOUNDARY_MAP(N_SEE_BOUNDARIES)%WALL_ID = WALL_ID
+      SEE_BOUNDARY_MAP(N_SEE_BOUNDARIES)%MATERIAL_ID = MATERIAL_ID
+      SEE_BOUNDARY_MAP(N_SEE_BOUNDARIES)%ENABLED = ENABLED
+      SEE_BOUNDARY_MAP(N_SEE_BOUNDARIES)%USE_NAME = USE_NAME
+
+      IF (PROC_ID == 0) THEN
+         IF (USE_NAME) THEN
+            WRITE(*,'(A,A,A,I3,A,I3,A,I3,A,L1)') '> SEE boundary mapping added: boundary="', &
+                  TRIM(BOUNDARY_NAME), '", wall=', WALL_ID, ', material=', MATERIAL_ID, &
+                  ' (', N_SEE_BOUNDARIES, '), enabled=', ENABLED
+         ELSE
+            WRITE(*,'(A,I3,A,I3,A,I3,A,I3,A,L1)') '> SEE boundary mapping added: boundary=', BOUNDARY_ID, &
+                  ', wall=', WALL_ID, ', material=', MATERIAL_ID, ' (', N_SEE_BOUNDARIES, '), enabled=', ENABLED
+         END IF
+      END IF
+
+      DEALLOCATE(STRARRAY)
+
+   END SUBROUTINE DEF_SEE_BOUNDARY_MAPPING
 
 
 END MODULE initialization

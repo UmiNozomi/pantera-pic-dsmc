@@ -27,6 +27,7 @@ PROGRAM PANTERA
    USE grid_and_partition
    USE fields
    USE washboard
+   USE secondary_electron_emission
 
    IMPLICIT NONE
 
@@ -53,6 +54,7 @@ PROGRAM PANTERA
    CALL INITREACTIONS      ! Initialize variables for reactions
    CALL INITFIELDS         ! Initialize electromagnetic fields
    CALL COMPUTE_B_FIELD_FROM_SOLENOIDS
+   CALL INIT_SEE           ! Initialize secondary electron emission
 
    ! ========= Initial particles seed ======================
    IF (RESTART_TIMESTEP > 0) THEN

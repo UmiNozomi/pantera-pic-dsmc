@@ -584,6 +584,67 @@ MODULE global
 
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   !!!!!!!!! Secondary Electron Emission (SEE) !!!!!!!!!!!!!!!!!!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   
+   LOGICAL :: BOOL_SEE_ENABLED = .FALSE.    ! Enable secondary electron emission
+   INTEGER :: SEE_ELECTRON_SPECIES_ID = -1  ! Species ID for electrons
+   INTEGER :: SEE_ION_SPECIES_ID = -1       ! Species ID for positive ions
+   INTEGER :: N_SEE_MATERIALS = 0           ! Number of SEE materials defined
+   
+   ! SEE material properties structure
+   TYPE SEE_MATERIAL_PROPERTIES
+      CHARACTER*64 :: NAME              ! Material name
+      ! Electron SEE parameters (Vaughan model)
+      REAL(KIND=8) :: DELTA_MAX         ! Maximum electron SEE yield
+      REAL(KIND=8) :: E_MAX             ! Energy at maximum electron yield [eV]
+      REAL(KIND=8) :: E_TH              ! Electron threshold energy [eV]
+      REAL(KIND=8) :: S_PARAMETER       ! Shape parameter (typically ~1.35)
+      ! Ion SEE parameters (Hagstrum model)
+      REAL(KIND=8) :: GAMMA_MAX         ! Maximum ion SEE yield
+      REAL(KIND=8) :: ION_E_THRESHOLD   ! Ion threshold energy [eV]
+      REAL(KIND=8) :: ION_ALPHA         ! Ion energy exponent
+      REAL(KIND=8) :: ION_BETA          ! Ion decay parameter
+      REAL(KIND=8) :: ION_CHARGE_FACTOR ! Ion charge state correction
+      ! Common parameters
+      REAL(KIND=8) :: W_WORK_FUNCTION   ! Work function [eV]
+      REAL(KIND=8) :: P1                ! Backscatter parameter 1
+      REAL(KIND=8) :: P2                ! Backscatter parameter 2
+      REAL(KIND=8) :: E1                ! Backscatter energy parameter 1 [eV]
+      REAL(KIND=8) :: E2                ! Backscatter energy parameter 2 [eV]
+      REAL(KIND=8) :: SIGMA             ! Surface roughness parameter
+   END TYPE SEE_MATERIAL_PROPERTIES
+
+   TYPE(SEE_MATERIAL_PROPERTIES), DIMENSION(:), ALLOCATABLE :: SEE_MATERIALS
+
+   ! SEE boundary mapping
+   TYPE SEE_BOUNDARY_MAPPING
+      CHARACTER*64 :: BOUNDARY_NAME  ! Boundary group name (e.g., "anode", "cathode")
+      INTEGER :: BOUNDARY_ID          ! Boundary group ID (for backward compatibility)
+      INTEGER :: WALL_ID              ! Wall ID (-1 for grid boundaries)
+      INTEGER :: MATERIAL_ID          ! SEE material ID
+      LOGICAL :: ENABLED              ! Is SEE enabled for this boundary
+      LOGICAL :: USE_NAME             ! Whether to use name or ID for boundary matching
+   END TYPE SEE_BOUNDARY_MAPPING
+
+   TYPE(SEE_BOUNDARY_MAPPING), DIMENSION(:), ALLOCATABLE :: SEE_BOUNDARY_MAP
+   INTEGER :: N_SEE_BOUNDARIES = 0
+
+   ! SEE statistics
+   INTEGER(KIND=8) :: SEE_TOTAL_IMPACTS = 0        ! Total electron impacts
+   INTEGER(KIND=8) :: SEE_TOTAL_EMISSIONS = 0      ! Total secondary emissions
+   INTEGER(KIND=8) :: SEE_TOTAL_ION_IMPACTS = 0    ! Total ion impacts
+   INTEGER(KIND=8) :: SEE_TOTAL_ION_EMISSIONS = 0  ! Total ion-induced emissions
+   REAL(KIND=8) :: SEE_TOTAL_YIELD = 0.d0          ! Average electron yield
+   REAL(KIND=8) :: SEE_TOTAL_ION_YIELD = 0.d0      ! Average ion yield (γ coefficient)
+   INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: SEE_MATERIAL_IMPACTS    ! Per-material impacts
+   INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: SEE_MATERIAL_EMISSIONS  ! Per-material emissions
+
+   CHARACTER*256 :: SEE_MATERIALS_FILENAME = ''    ! SEE materials definition file
+   CHARACTER*256 :: SEE_STATS_SAVE_PATH = ''       ! SEE statistics output path
+
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    !!!!!!!!! Average flowfield !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    

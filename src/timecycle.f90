@@ -26,6 +26,7 @@ MODULE timecycle
    USE postprocess
    USE fields
    USE washboard
+   USE secondary_electron_emission
 
    CONTAINS
 
@@ -343,6 +344,13 @@ MODULE timecycle
 
          ! ########### Dump particle fluxes #######################################
          IF (BOOL_DUMP_FLUXES) CALL DUMP_FLUXES_FILE(tID)
+
+         ! ########### Dump SEE statistics ####################################
+         ! SEE statistics disabled per user request
+         ! IF (BOOL_SEE_ENABLED .AND. MOD(tID, STATS_EVERY) .EQ. 0) THEN
+         !    CALL WRITE_SEE_STATISTICS(tID)
+!    CALL CHECK_GLOW_DISCHARGE_CONDITIONS(tID)
+         ! END IF
 
          ! ########### Dump individual particle ###################################
          CALL DUMP_TRAJECTORY_FILE(tID)
@@ -1066,6 +1074,11 @@ MODULE timecycle
       REAL(KIND=8) :: CHARGE, K, PSIP, RHO_Q
       INTEGER :: VP
 
+      ! SEE related variables
+      INTEGER :: SEE_MATERIAL_ID, N_SEE_SECONDARY, ISE
+      REAL(KIND=8), DIMENSION(3) :: IMPACT_POSITION
+      TYPE(PARTICLE_DATA_STRUCTURE) :: SEE_SINGLE_PARTICLE
+
       REAL(KIND=8) :: VXPRE, VYPRE, VZPRE
 
       
@@ -1423,6 +1436,23 @@ MODULE timecycle
 
                         ! Apply particle boundary condition
                         IF (GRID_BC(FACE_PG)%PARTICLE_BC == SPECULAR) THEN
+                           ! Process secondary electron emission before surface interaction
+                           IF (BOOL_SEE_ENABLED) THEN
+                              SEE_MATERIAL_ID = FIND_SEE_MATERIAL_FOR_BOUNDARY(FACE_PG, -1)
+                              IF (SEE_MATERIAL_ID > 0 .AND. SEE_MATERIAL_ID <= N_SEE_MATERIALS) THEN
+                                 IMPACT_POSITION = [particles(IP)%X, particles(IP)%Y, particles(IP)%Z]
+                                 CALL PROCESS_SEE_IMPACT(IP, IMPACT_POSITION, FACE_NORMAL, &
+                                                        SEE_MATERIAL_ID, N_SEE_SECONDARY)
+                                 ! Generate and add secondary electrons one by one (no array allocation)
+                                 DO ISE = 1, N_SEE_SECONDARY
+                                    CALL GENERATE_SINGLE_SECONDARY_ELECTRON(IMPACT_POSITION(1), IMPACT_POSITION(2), &
+                                                                            IMPACT_POSITION(3), FACE_NORMAL, &
+                                                                            SEE_MATERIAL_ID, particles(IP)%IC, SEE_SINGLE_PARTICLE)
+                                    CALL ADD_PARTICLE_ARRAY(SEE_SINGLE_PARTICLE, NP_PROC, particles)
+                                 END DO
+                              END IF
+                           END IF
+
                            IF (GRID_BC(FACE_PG)%REACT) THEN
                               CALL WALL_REACT(particles, IP, REMOVE_PART(IP))
                            END IF
@@ -1435,6 +1465,23 @@ MODULE timecycle
                            particles(IP)%VZ = particles(IP)%VZ - 2.*VDOTN*FACE_NORMAL(3)
 
                         ELSE IF (GRID_BC(FACE_PG)%PARTICLE_BC == DIFFUSE) THEN
+                           ! Process secondary electron emission before surface interaction
+                           IF (BOOL_SEE_ENABLED) THEN
+                              SEE_MATERIAL_ID = FIND_SEE_MATERIAL_FOR_BOUNDARY(FACE_PG, -1)
+                              IF (SEE_MATERIAL_ID > 0 .AND. SEE_MATERIAL_ID <= N_SEE_MATERIALS) THEN
+                                 IMPACT_POSITION = [particles(IP)%X, particles(IP)%Y, particles(IP)%Z]
+                                 CALL PROCESS_SEE_IMPACT(IP, IMPACT_POSITION, FACE_NORMAL, &
+                                                        SEE_MATERIAL_ID, N_SEE_SECONDARY)
+                                 ! Generate and add secondary electrons one by one (no array allocation)
+                                 DO ISE = 1, N_SEE_SECONDARY
+                                    CALL GENERATE_SINGLE_SECONDARY_ELECTRON(IMPACT_POSITION(1), IMPACT_POSITION(2), &
+                                                                            IMPACT_POSITION(3), FACE_NORMAL, &
+                                                                            SEE_MATERIAL_ID, particles(IP)%IC, SEE_SINGLE_PARTICLE)
+                                    CALL ADD_PARTICLE_ARRAY(SEE_SINGLE_PARTICLE, NP_PROC, particles)
+                                 END DO
+                              END IF
+                           END IF
+
                            IF (GRID_BC(FACE_PG)%REACT) THEN
                               CALL WALL_REACT(particles, IP, REMOVE_PART(IP))
                            END IF
