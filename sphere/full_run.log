@@ -1,0 +1,283 @@
+ > INITIALIZING MPI...
+ > MPI INIT DONE!
+ > INITIALIZING PETSc...
+ > PETSc INIT DONE!
+
+
+ PANTERA PIC-DSMC  Copyright (C) 2025  von Karman Institute for Fluid Dynamics (VKI)
+ This program comes with ABSOLUTELY NO WARRANTY.                                    
+ This is free software, and you are welcome to redistribute it                      
+ under certain conditions. See https://www.gnu.org/licenses/ for details.           
+
+
+                                                             ___.,.   .~-.,    
+                                               .___    .,//.~      `\/     \   
+                                              / `\ \.,/             /       |  
+                                              |   )               ./  (     )  
+                                               \ /                     \,` /   
+                                                )                          )   
+                                                (                              
+                                                /     ~.     .`                
+                                               (  __.  `\   /  ,__,            
+                                                )(o_\.   `,`  ./o_)            
+      _________                                (     )  / /  //                
+      \   ___  \                                \   /    `                     
+      /  /___\ /       __                        \_/                           
+     /  ______/_____  / /____  _________ _        (   /`/ ,``, )/______        
+    /  / / __``/ __ \/ __/ _ \/ ___/ __ `/    ____( .____ `   /\______         
+   /  / / /_/ / / / / /_/  __/ /  / /_/ /    ______\(,  ,)   /V \              
+  /___| \__,_/_/ /_/\__/\___/_/   \__,_/        ____\\__/__~`V   ) ./          
+                                   V  V              V_M._V.M/\/` /            
+  PArticle Numerical Tool for non-Equilibrium         \          /             
+                             Reacting Aerodynamics     (__.,-_.,/              
+
+       ____     ____   ______           ____    _____    __  ___   ______      
+      / __ \   /  _/  / ____/          / __ \  / ___/   /  |/  /  / ____/      
+     / /_/ /   / /   / /      ______  / / / /  \__ \   / /|_/ /  / /           
+    / ____/  _/ /   / /___   /_____/ / /_/ /  ___/ /  / /  / /  / /___         
+   /_/      /___/   \____/          /_____/  /____/  /_/  /_/   \____/         
+
+
+ > READING INPUT DATA...
+ ===========================================
+ Reading grid file in SU2 format.
+ ===========================================
+ ===========================================
+ Computing cell volumes.
+ ===========================================
+ ===========================================
+ Computing grid connectivity.
+ ===========================================
+ ===========================================
+ Computing face normals.
+ ===========================================
+ ===========================================
+ Checking ordering.
+ ===========================================
+ ===========================================
+ Creating boundary grid.
+ ===========================================
+ =============================================================
+ Done reading grid file.
+ It contains         3748  nodes and         6765  cells.
+ The boundary grid contains          626  lines and          627  nodes.
+ =============================================================
+ > Read            8  SEE materials:
+  Material   1: Copper (δ_max= 1.300, γ_max=   0.3, E_max=****** eV)
+  Material   2: Aluminum (δ_max= 1.200, γ_max=   0.2, E_max=****** eV)
+  Material   3: Steel (δ_max= 1.100, γ_max=   0.2, E_max=****** eV)
+  Material   4: Tungsten (δ_max= 1.400, γ_max=   0.4, E_max=****** eV)
+  Material   5: Nickel (δ_max= 1.000, γ_max=   0.1, E_max=****** eV)
+  Material   6: QuartzGlass (δ_max= 3.800, γ_max=   0.1, E_max=****** eV)
+  Material   7: BoroGlass (δ_max= 3.200, γ_max=   0.1, E_max=****** eV)
+  Material   8: SodaGlass (δ_max= 2.800, γ_max=   0.1, E_max=****** eV)
+ > Material ID range: 1 to            8
+> SEE boundary mapping added: boundary="anode", wall= -1, material=  1 (  1), enabled=T
+> SEE boundary mapping added: boundary="cathode", wall= -1, material=  1 (  2), enabled=T
+> SEE boundary mapping added: boundary="wall", wall= -1, material=  6 (  3), enabled=T
+ > Constant current BC configured for group: cathode
+   Target current:  0.50000000000000000       A
+   Initial voltage:  -2000.0000000000000       V
+   PID coefficients (Kp, Ki, Kd):   1.0000000000000000       0.10000000000000001        1.0000000000000000E-002
+   Sliding window size:         200
+   =========== Geometry and domain ==================================
+     Dimensions of the simulation:                            2
+     Axisymmetric geometry bool [T/F]:                 T
+     Domain limits:                                    
+      X [m]:      0.000E+00     1.800E-01
+      Y [m]:      0.000E+00     9.000E-02
+      Z [m]:      0.000E+00     6.283E+00
+     Unstructured grid with number of cells, nodes:        6765    3748
+   =========== Numerical settings ===================================
+     Fnum:                                                  1.000E+07
+     Timestep [s]:                                          1.000E-11
+     Initial timestep:                                         0
+     Final timestep:                                     1000000
+     RNG seed (global):                                   512875
+   =========== Collisions ============================
+     Collision type:                                          4
+   =========== Particle injection at boundaries =====================
+     Particle injection at boundaries bool [T/F]:      F
+   =========== Particle injection from line source =====================
+     Particle injection from line source bool [T/F]:   F
+   =========== MPI parallelization settings =========================
+     Number of MPI processes:                                  1
+   =========== Species =========================
+        Number of species present:         4
+   =========== Mixtures =========================
+     Number of mixtures:                                       4
+     Mixture            1  named argon has            1  components:
+     Mixture component            1  is Ar with fraction    1.0000000000000000       and ID            1
+     Mixture            2  named Electrons has            1  components:
+     Mixture component            1  is e- with fraction    1.0000000000000000       and ID            4
+     Mixture            3  named Plasma has            2  components:
+     Mixture component            1  is Ar+ with fraction   0.50000000000000000       and ID            3
+     Mixture component            2  is e- with fraction   0.50000000000000000       and ID            4
+     Mixture            4  named Ions has            1  components:
+     Mixture component            1  is Ar+ with fraction    1.0000000000000000       and ID            3
+ Ion SEE enabled for species ID:            3
+ > SEE initialized with            8  materials
+ > Electron species ID:            4
+ > SEEDING INITIAL PARTICLES IN THE DOMAIN...
+ > STARTING TIME LOOP...
+DEBUG[PROC0] t=     0 LOCAL_Q=  0.0000E+00  0.0000E+00  0.0000E+00
+DEBUG[MASTER] t=     0 GLOBAL_Q=  0.0000E+00  0.0000E+00  0.0000E+00
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      100 of  1000000 - time:      1.000E-09 [s] - CPU time:        0.5 [s] - est. time required:     1 [h] 15 [m] - number of particles:        387 - number of collisions:          4 - number of reactions:          0
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          0.44 s      0.44 s      0.44 s     98.73%.
+ Particle movement:       0.00 s      0.00 s      0.00 s      0.93%.
+ File output:             0.00 s      0.00 s      0.00 s      0.25%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.04%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.04%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      200 of  1000000 - time:      2.000E-09 [s] - CPU time:        0.9 [s] - est. time required:     1 [h] 15 [m] - number of particles:        405 - number of collisions:          3 - number of reactions:          2
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          0.89 s      0.89 s      0.89 s     98.76%.
+ Particle movement:       0.01 s      0.01 s      0.01 s      0.94%.
+ File output:             0.00 s      0.00 s      0.00 s      0.21%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.04%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.04%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      300 of  1000000 - time:      3.000E-09 [s] - CPU time:        1.4 [s] - est. time required:     1 [h] 16 [m] - number of particles:        484 - number of collisions:          3 - number of reactions:          1
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          1.34 s      1.34 s      1.34 s     98.70%.
+ Particle movement:       0.01 s      0.01 s      0.01 s      1.00%.
+ File output:             0.00 s      0.00 s      0.00 s      0.21%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.04%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.05%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      400 of  1000000 - time:      4.000E-09 [s] - CPU time:        1.8 [s] - est. time required:     1 [h] 16 [m] - number of particles:        584 - number of collisions:          5 - number of reactions:          2
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          1.79 s      1.79 s      1.79 s     98.62%.
+ Particle movement:       0.02 s      0.02 s      0.02 s      1.08%.
+ File output:             0.00 s      0.00 s      0.00 s      0.20%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.04%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.05%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      500 of  1000000 - time:      5.000E-09 [s] - CPU time:        2.3 [s] - est. time required:     1 [h] 16 [m] - number of particles:        722 - number of collisions:          4 - number of reactions:          1
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          2.23 s      2.23 s      2.23 s     98.51%.
+ Particle movement:       0.03 s      0.03 s      0.03 s      1.19%.
+ File output:             0.00 s      0.00 s      0.00 s      0.20%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.04%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.05%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      600 of  1000000 - time:      6.000E-09 [s] - CPU time:        2.8 [s] - est. time required:     1 [h] 16 [m] - number of particles:        934 - number of collisions:          2 - number of reactions:          1
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          2.69 s      2.69 s      2.69 s     98.37%.
+ Particle movement:       0.04 s      0.04 s      0.04 s      1.33%.
+ File output:             0.01 s      0.01 s      0.01 s      0.20%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.04%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.05%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      700 of  1000000 - time:      7.000E-09 [s] - CPU time:        3.2 [s] - est. time required:     1 [h] 16 [m] - number of particles:       1243 - number of collisions:          6 - number of reactions:          3
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          3.14 s      3.14 s      3.14 s     98.18%.
+ Particle movement:       0.05 s      0.05 s      0.05 s      1.51%.
+ File output:             0.01 s      0.01 s      0.01 s      0.20%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.05%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.06%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      800 of  1000000 - time:      8.000E-09 [s] - CPU time:        3.7 [s] - est. time required:     1 [h] 17 [m] - number of particles:       1524 - number of collisions:          5 - number of reactions:          3
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          3.60 s      3.60 s      3.60 s     97.96%.
+ Particle movement:       0.06 s      0.06 s      0.06 s      1.72%.
+ File output:             0.01 s      0.01 s      0.01 s      0.21%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.05%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.07%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      900 of  1000000 - time:      9.000E-09 [s] - CPU time:        4.2 [s] - est. time required:     1 [h] 17 [m] - number of particles:       1904 - number of collisions:          6 - number of reactions:          4
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          4.06 s      4.06 s      4.06 s     97.72%.
+ Particle movement:       0.08 s      0.08 s      0.08 s      1.95%.
+ File output:             0.01 s      0.01 s      0.01 s      0.21%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.05%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.07%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     1000 of  1000000 - time:      1.000E-08 [s] - CPU time:        4.7 [s] - est. time required:     1 [h] 17 [m] - number of particles:       2377 - number of collisions:         12 - number of reactions:          8
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          4.52 s      4.52 s      4.52 s     97.42%.
+ Particle movement:       0.10 s      0.10 s      0.10 s      2.23%.
+ File output:             0.01 s      0.01 s      0.01 s      0.21%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.05%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.08%.
+ ====================================================================
+ KSPConvergedReason =            2
+At line 487 of file src/postprocess.f90 (unit = 54321)
+Fortran runtime error: Cannot open file './results/dsmc_flowfield_1000.vtk': File exists
+
+Error termination. Backtrace:
+#0  0x7f0a1a2c4e59 in ???
+#1  0x7f0a1a2c5a71 in ???
+#2  0x7f0a1a2c66dc in ???
+#3  0x7f0a1a557e30 in ???
+#4  0x7f0a1a55812f in ???
+#5  0x563849c9cae3 in ???
+#6  0x563849cd3a91 in ???
+#7  0x563849c2d95e in ???
+#8  0x7f0a19f6b1c9 in __libc_start_call_main
+	at ../sysdeps/nptl/libc_start_call_main.h:58
+#9  0x7f0a19f6b28a in __libc_start_main_impl
+	at ../csu/libc-start.c:360
+#10  0x563849c2da04 in ???
+#11  0xffffffffffffffff in ???

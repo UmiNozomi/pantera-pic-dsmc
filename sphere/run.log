@@ -1,0 +1,796 @@
+ > INITIALIZING MPI...
+ > MPI INIT DONE!
+ > INITIALIZING PETSc...
+ > PETSc INIT DONE!
+
+
+ PANTERA PIC-DSMC  Copyright (C) 2025  von Karman Institute for Fluid Dynamics (VKI)
+ This program comes with ABSOLUTELY NO WARRANTY.                                    
+ This is free software, and you are welcome to redistribute it                      
+ under certain conditions. See https://www.gnu.org/licenses/ for details.           
+
+
+                                                             ___.,.   .~-.,    
+                                               .___    .,//.~      `\/     \   
+                                              / `\ \.,/             /       |  
+                                              |   )               ./  (     )  
+                                               \ /                     \,` /   
+                                                )                          )   
+                                                (                              
+                                                /     ~.     .`                
+                                               (  __.  `\   /  ,__,            
+                                                )(o_\.   `,`  ./o_)            
+      _________                                (     )  / /  //                
+      \   ___  \                                \   /    `                     
+      /  /___\ /       __                        \_/                           
+     /  ______/_____  / /____  _________ _        (   /`/ ,``, )/______        
+    /  / / __``/ __ \/ __/ _ \/ ___/ __ `/    ____( .____ `   /\______         
+   /  / / /_/ / / / / /_/  __/ /  / /_/ /    ______\(,  ,)   /V \              
+  /___| \__,_/_/ /_/\__/\___/_/   \__,_/        ____\\__/__~`V   ) ./          
+                                   V  V              V_M._V.M/\/` /            
+  PArticle Numerical Tool for non-Equilibrium         \          /             
+                             Reacting Aerodynamics     (__.,-_.,/              
+
+       ____     ____   ______           ____    _____    __  ___   ______      
+      / __ \   /  _/  / ____/          / __ \  / ___/   /  |/  /  / ____/      
+     / /_/ /   / /   / /      ______  / / / /  \__ \   / /|_/ /  / /           
+    / ____/  _/ /   / /___   /_____/ / /_/ /  ___/ /  / /  / /  / /___         
+   /_/      /___/   \____/          /_____/  /____/  /_/  /_/   \____/         
+
+
+ > READING INPUT DATA...
+ ===========================================
+ Reading grid file in SU2 format.
+ ===========================================
+ ===========================================
+ Computing cell volumes.
+ ===========================================
+ ===========================================
+ Computing grid connectivity.
+ ===========================================
+ ===========================================
+ Computing face normals.
+ ===========================================
+ ===========================================
+ Checking ordering.
+ ===========================================
+ ===========================================
+ Creating boundary grid.
+ ===========================================
+ =============================================================
+ Done reading grid file.
+ It contains         3748  nodes and         6765  cells.
+ The boundary grid contains          626  lines and          627  nodes.
+ =============================================================
+ > Read            8  SEE materials:
+  Material   1: Copper (δ_max= 1.300, γ_max=   0.3, E_max=****** eV)
+  Material   2: Aluminum (δ_max= 1.200, γ_max=   0.2, E_max=****** eV)
+  Material   3: Steel (δ_max= 1.100, γ_max=   0.2, E_max=****** eV)
+  Material   4: Tungsten (δ_max= 1.400, γ_max=   0.4, E_max=****** eV)
+  Material   5: Nickel (δ_max= 1.000, γ_max=   0.1, E_max=****** eV)
+  Material   6: QuartzGlass (δ_max= 3.800, γ_max=   0.1, E_max=****** eV)
+  Material   7: BoroGlass (δ_max= 3.200, γ_max=   0.1, E_max=****** eV)
+  Material   8: SodaGlass (δ_max= 2.800, γ_max=   0.1, E_max=****** eV)
+ > Material ID range: 1 to            8
+> SEE boundary mapping added: boundary="anode", wall= -1, material=  1 (  1), enabled=T
+> SEE boundary mapping added: boundary="cathode", wall= -1, material=  1 (  2), enabled=T
+> SEE boundary mapping added: boundary="wall", wall= -1, material=  6 (  3), enabled=T
+ > Constant current BC configured for group: cathode
+   Target current:  0.50000000000000000       A
+   Initial voltage:  -2000.0000000000000       V
+   PID coefficients (Kp, Ki, Kd):   1.0000000000000000       0.10000000000000001        1.0000000000000000E-002
+   Sliding window size:         200
+   =========== Geometry and domain ==================================
+     Dimensions of the simulation:                            2
+     Axisymmetric geometry bool [T/F]:                 T
+     Domain limits:                                    
+      X [m]:      0.000E+00     1.800E-01
+      Y [m]:      0.000E+00     9.000E-02
+      Z [m]:      0.000E+00     6.283E+00
+     Unstructured grid with number of cells, nodes:        6765    3748
+   =========== Numerical settings ===================================
+     Fnum:                                                  1.000E+07
+     Timestep [s]:                                          1.000E-11
+     Initial timestep:                                         0
+     Final timestep:                                     1000000
+     RNG seed (global):                                   512875
+   =========== Collisions ============================
+     Collision type:                                          4
+   =========== Particle injection at boundaries =====================
+     Particle injection at boundaries bool [T/F]:      F
+   =========== Particle injection from line source =====================
+     Particle injection from line source bool [T/F]:   F
+   =========== MPI parallelization settings =========================
+     Number of MPI processes:                                  1
+   =========== Species =========================
+        Number of species present:         4
+   =========== Mixtures =========================
+     Number of mixtures:                                       4
+     Mixture            1  named argon has            1  components:
+     Mixture component            1  is Ar with fraction    1.0000000000000000       and ID            1
+     Mixture            2  named Electrons has            1  components:
+     Mixture component            1  is e- with fraction    1.0000000000000000       and ID            4
+     Mixture            3  named Plasma has            2  components:
+     Mixture component            1  is Ar+ with fraction   0.50000000000000000       and ID            3
+     Mixture component            2  is e- with fraction   0.50000000000000000       and ID            4
+     Mixture            4  named Ions has            1  components:
+     Mixture component            1  is Ar+ with fraction    1.0000000000000000       and ID            3
+ Ion SEE enabled for species ID:            3
+ > SEE initialized with            8  materials
+ > Electron species ID:            4
+ > SEEDING INITIAL PARTICLES IN THE DOMAIN...
+ > STARTING TIME LOOP...
+DEBUG UPDATE_PID t=     0 Q(ion,elec,see)=  0.0000E+00  0.0000E+00  0.0000E+00
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      100 of  1000000 - time:      1.000E-09 [s] - CPU time:        0.5 [s] - est. time required:     1 [h] 15 [m] - number of particles:        387 - number of collisions:          4 - number of reactions:          0
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          0.44 s      0.44 s      0.44 s     98.67%.
+ Particle movement:       0.00 s      0.00 s      0.00 s      1.01%.
+ File output:             0.00 s      0.00 s      0.00 s      0.24%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.04%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.04%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      200 of  1000000 - time:      2.000E-09 [s] - CPU time:        0.9 [s] - est. time required:     1 [h] 15 [m] - number of particles:        411 - number of collisions:          3 - number of reactions:          0
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          0.89 s      0.89 s      0.89 s     98.68%.
+ Particle movement:       0.01 s      0.01 s      0.01 s      1.02%.
+ File output:             0.00 s      0.00 s      0.00 s      0.22%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.04%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.04%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      300 of  1000000 - time:      3.000E-09 [s] - CPU time:        1.4 [s] - est. time required:     1 [h] 15 [m] - number of particles:        499 - number of collisions:          2 - number of reactions:          2
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          1.34 s      1.34 s      1.34 s     98.63%.
+ Particle movement:       0.01 s      0.01 s      0.01 s      1.06%.
+ File output:             0.00 s      0.00 s      0.00 s      0.22%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.04%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.04%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      400 of  1000000 - time:      4.000E-09 [s] - CPU time:        1.8 [s] - est. time required:     1 [h] 16 [m] - number of particles:        592 - number of collisions:          3 - number of reactions:          2
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          1.79 s      1.79 s      1.79 s     98.55%.
+ Particle movement:       0.02 s      0.02 s      0.02 s      1.15%.
+ File output:             0.00 s      0.00 s      0.00 s      0.21%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.04%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.05%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      500 of  1000000 - time:      5.000E-09 [s] - CPU time:        2.3 [s] - est. time required:     1 [h] 16 [m] - number of particles:        738 - number of collisions:          4 - number of reactions:          1
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          2.24 s      2.24 s      2.24 s     98.44%.
+ Particle movement:       0.03 s      0.03 s      0.03 s      1.25%.
+ File output:             0.00 s      0.00 s      0.00 s      0.21%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.04%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.05%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      600 of  1000000 - time:      6.000E-09 [s] - CPU time:        2.8 [s] - est. time required:     1 [h] 16 [m] - number of particles:        989 - number of collisions:          7 - number of reactions:          3
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          2.69 s      2.69 s      2.69 s     98.28%.
+ Particle movement:       0.04 s      0.04 s      0.04 s      1.41%.
+ File output:             0.01 s      0.01 s      0.01 s      0.21%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.04%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.05%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      700 of  1000000 - time:      7.000E-09 [s] - CPU time:        3.2 [s] - est. time required:     1 [h] 17 [m] - number of particles:       1348 - number of collisions:          6 - number of reactions:          3
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          3.15 s      3.15 s      3.15 s     98.08%.
+ Particle movement:       0.05 s      0.05 s      0.05 s      1.60%.
+ File output:             0.01 s      0.01 s      0.01 s      0.21%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.04%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.06%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      800 of  1000000 - time:      8.000E-09 [s] - CPU time:        3.7 [s] - est. time required:     1 [h] 17 [m] - number of particles:       1671 - number of collisions:          3 - number of reactions:          1
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          3.61 s      3.61 s      3.61 s     97.80%.
+ Particle movement:       0.07 s      0.07 s      0.07 s      1.87%.
+ File output:             0.01 s      0.01 s      0.01 s      0.22%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.05%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.07%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:      900 of  1000000 - time:      9.000E-09 [s] - CPU time:        4.2 [s] - est. time required:     1 [h] 17 [m] - number of particles:       2096 - number of collisions:          5 - number of reactions:          2
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          4.07 s      4.07 s      4.07 s     97.52%.
+ Particle movement:       0.09 s      0.09 s      0.09 s      2.14%.
+ File output:             0.01 s      0.01 s      0.01 s      0.22%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.05%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.07%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     1000 of  1000000 - time:      1.000E-08 [s] - CPU time:        4.7 [s] - est. time required:     1 [h] 18 [m] - number of particles:       2629 - number of collisions:         13 - number of reactions:          8
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          4.54 s      4.54 s      4.54 s     97.19%.
+ Particle movement:       0.11 s      0.11 s      0.11 s      2.46%.
+ File output:             0.01 s      0.01 s      0.01 s      0.22%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.05%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.08%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     1100 of  1000000 - time:      1.100E-08 [s] - CPU time:        5.2 [s] - est. time required:     1 [h] 18 [m] - number of particles:       3231 - number of collisions:         12 - number of reactions:          6
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          5.00 s      5.00 s      5.00 s     96.76%.
+ Particle movement:       0.15 s      0.15 s      0.15 s      2.82%.
+ File output:             0.01 s      0.01 s      0.01 s      0.27%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.05%.
+ Collisions:              0.00 s      0.00 s      0.00 s      0.09%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     1200 of  1000000 - time:      1.200E-08 [s] - CPU time:        5.7 [s] - est. time required:     1 [h] 19 [m] - number of particles:       3969 - number of collisions:         24 - number of reactions:          9
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          5.47 s      5.47 s      5.47 s     96.33%.
+ Particle movement:       0.18 s      0.18 s      0.18 s      3.24%.
+ File output:             0.02 s      0.02 s      0.02 s      0.27%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.06%.
+ Collisions:              0.01 s      0.01 s      0.01 s      0.10%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     1300 of  1000000 - time:      1.300E-08 [s] - CPU time:        6.3 [s] - est. time required:     1 [h] 20 [m] - number of particles:       4771 - number of collisions:         23 - number of reactions:         10
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          5.94 s      5.94 s      5.94 s     95.85%.
+ Particle movement:       0.23 s      0.23 s      0.23 s      3.71%.
+ File output:             0.02 s      0.02 s      0.02 s      0.27%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.06%.
+ Collisions:              0.01 s      0.01 s      0.01 s      0.11%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     1400 of  1000000 - time:      1.400E-08 [s] - CPU time:        6.8 [s] - est. time required:     1 [h] 20 [m] - number of particles:       5653 - number of collisions:         21 - number of reactions:          9
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          6.40 s      6.40 s      6.40 s     95.31%.
+ Particle movement:       0.28 s      0.28 s      0.28 s      4.22%.
+ File output:             0.02 s      0.02 s      0.02 s      0.27%.
+ MPI particle comm.:      0.00 s      0.00 s      0.00 s      0.07%.
+ Collisions:              0.01 s      0.01 s      0.01 s      0.13%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     1500 of  1000000 - time:      1.500E-08 [s] - CPU time:        7.3 [s] - est. time required:     1 [h] 21 [m] - number of particles:       6519 - number of collisions:         27 - number of reactions:         13
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          6.86 s      6.86 s      6.86 s     94.75%.
+ Particle movement:       0.34 s      0.34 s      0.34 s      4.77%.
+ File output:             0.02 s      0.02 s      0.02 s      0.28%.
+ MPI particle comm.:      0.01 s      0.01 s      0.01 s      0.07%.
+ Collisions:              0.01 s      0.01 s      0.01 s      0.14%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     1600 of  1000000 - time:      1.600E-08 [s] - CPU time:        7.8 [s] - est. time required:     1 [h] 21 [m] - number of particles:       7614 - number of collisions:         27 - number of reactions:         13
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          7.30 s      7.30 s      7.30 s     94.12%.
+ Particle movement:       0.42 s      0.42 s      0.42 s      5.37%.
+ File output:             0.02 s      0.02 s      0.02 s      0.28%.
+ MPI particle comm.:      0.01 s      0.01 s      0.01 s      0.07%.
+ Collisions:              0.01 s      0.01 s      0.01 s      0.15%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     1700 of  1000000 - time:      1.700E-08 [s] - CPU time:        8.4 [s] - est. time required:     1 [h] 21 [m] - number of particles:       8927 - number of collisions:         42 - number of reactions:         13
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          7.74 s      7.74 s      7.74 s     93.45%.
+ Particle movement:       0.50 s      0.50 s      0.50 s      6.01%.
+ File output:             0.02 s      0.02 s      0.02 s      0.29%.
+ MPI particle comm.:      0.01 s      0.01 s      0.01 s      0.08%.
+ Collisions:              0.01 s      0.01 s      0.01 s      0.17%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     1800 of  1000000 - time:      1.800E-08 [s] - CPU time:        8.9 [s] - est. time required:     1 [h] 22 [m] - number of particles:      10309 - number of collisions:         48 - number of reactions:         19
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          8.18 s      8.18 s      8.18 s     92.72%.
+ Particle movement:       0.59 s      0.59 s      0.59 s      6.71%.
+ File output:             0.03 s      0.03 s      0.03 s      0.30%.
+ MPI particle comm.:      0.01 s      0.01 s      0.01 s      0.09%.
+ Collisions:              0.02 s      0.02 s      0.02 s      0.19%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     1900 of  1000000 - time:      1.900E-08 [s] - CPU time:        9.5 [s] - est. time required:     1 [h] 22 [m] - number of particles:      11813 - number of collisions:         50 - number of reactions:         24
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          8.61 s      8.61 s      8.61 s     91.95%.
+ Particle movement:       0.70 s      0.70 s      0.70 s      7.45%.
+ File output:             0.03 s      0.03 s      0.03 s      0.30%.
+ MPI particle comm.:      0.01 s      0.01 s      0.01 s      0.09%.
+ Collisions:              0.02 s      0.02 s      0.02 s      0.21%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     2000 of  1000000 - time:      2.000E-08 [s] - CPU time:       10.0 [s] - est. time required:     1 [h] 23 [m] - number of particles:      13244 - number of collisions:         60 - number of reactions:         35
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          9.04 s      9.04 s      9.04 s     91.08%.
+ Particle movement:       0.82 s      0.82 s      0.82 s      8.27%.
+ File output:             0.03 s      0.03 s      0.03 s      0.31%.
+ MPI particle comm.:      0.01 s      0.01 s      0.01 s      0.10%.
+ Collisions:              0.02 s      0.02 s      0.02 s      0.23%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     2100 of  1000000 - time:      2.100E-08 [s] - CPU time:       10.6 [s] - est. time required:     1 [h] 24 [m] - number of particles:      14703 - number of collisions:         48 - number of reactions:         16
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          9.46 s      9.46 s      9.46 s     90.23%.
+ Particle movement:       0.95 s      0.95 s      0.95 s      9.08%.
+ File output:             0.04 s      0.04 s      0.04 s      0.34%.
+ MPI particle comm.:      0.01 s      0.01 s      0.01 s      0.11%.
+ Collisions:              0.03 s      0.03 s      0.03 s      0.25%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     2200 of  1000000 - time:      2.200E-08 [s] - CPU time:       11.2 [s] - est. time required:     1 [h] 24 [m] - number of particles:      16257 - number of collisions:         76 - number of reactions:         32
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:          9.88 s      9.88 s      9.88 s     89.37%.
+ Particle movement:       1.09 s      1.09 s      1.09 s      9.90%.
+ File output:             0.04 s      0.04 s      0.04 s      0.34%.
+ MPI particle comm.:      0.01 s      0.01 s      0.01 s      0.12%.
+ Collisions:              0.03 s      0.03 s      0.03 s      0.27%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     2300 of  1000000 - time:      2.300E-08 [s] - CPU time:       11.8 [s] - est. time required:     1 [h] 25 [m] - number of particles:      17751 - number of collisions:         82 - number of reactions:         35
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         10.31 s     10.31 s     10.31 s     88.49%.
+ Particle movement:       1.25 s      1.25 s      1.25 s     10.74%.
+ File output:             0.04 s      0.04 s      0.04 s      0.35%.
+ MPI particle comm.:      0.01 s      0.01 s      0.01 s      0.12%.
+ Collisions:              0.03 s      0.03 s      0.03 s      0.29%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     2400 of  1000000 - time:      2.400E-08 [s] - CPU time:       12.4 [s] - est. time required:     1 [h] 25 [m] - number of particles:      19231 - number of collisions:         87 - number of reactions:         32
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         10.73 s     10.73 s     10.73 s     87.59%.
+ Particle movement:       1.42 s      1.42 s      1.42 s     11.61%.
+ File output:             0.04 s      0.04 s      0.04 s      0.35%.
+ MPI particle comm.:      0.02 s      0.02 s      0.02 s      0.13%.
+ Collisions:              0.04 s      0.04 s      0.04 s      0.32%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     2500 of  1000000 - time:      2.500E-08 [s] - CPU time:       13.0 [s] - est. time required:     1 [h] 26 [m] - number of particles:      20819 - number of collisions:         70 - number of reactions:         33
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         11.14 s     11.14 s     11.14 s     86.65%.
+ Particle movement:       1.61 s      1.61 s      1.61 s     12.51%.
+ File output:             0.05 s      0.05 s      0.05 s      0.36%.
+ MPI particle comm.:      0.02 s      0.02 s      0.02 s      0.14%.
+ Collisions:              0.04 s      0.04 s      0.04 s      0.34%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     2600 of  1000000 - time:      2.600E-08 [s] - CPU time:       13.7 [s] - est. time required:     1 [h] 27 [m] - number of particles:      22603 - number of collisions:         92 - number of reactions:         42
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         11.55 s     11.55 s     11.55 s     85.70%.
+ Particle movement:       1.81 s      1.81 s      1.81 s     13.42%.
+ File output:             0.05 s      0.05 s      0.05 s      0.37%.
+ MPI particle comm.:      0.02 s      0.02 s      0.02 s      0.15%.
+ Collisions:              0.05 s      0.05 s      0.05 s      0.37%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     2700 of  1000000 - time:      2.700E-08 [s] - CPU time:       14.3 [s] - est. time required:     1 [h] 28 [m] - number of particles:      24280 - number of collisions:        102 - number of reactions:         45
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         11.95 s     11.95 s     11.95 s     84.71%.
+ Particle movement:       2.03 s      2.03 s      2.03 s     14.37%.
+ File output:             0.05 s      0.05 s      0.05 s      0.37%.
+ MPI particle comm.:      0.02 s      0.02 s      0.02 s      0.15%.
+ Collisions:              0.06 s      0.06 s      0.06 s      0.39%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     2800 of  1000000 - time:      2.800E-08 [s] - CPU time:       15.0 [s] - est. time required:     1 [h] 28 [m] - number of particles:      25828 - number of collisions:         98 - number of reactions:         36
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         12.35 s     12.35 s     12.35 s     83.72%.
+ Particle movement:       2.26 s      2.26 s      2.26 s     15.31%.
+ File output:             0.06 s      0.06 s      0.06 s      0.38%.
+ MPI particle comm.:      0.02 s      0.02 s      0.02 s      0.16%.
+ Collisions:              0.06 s      0.06 s      0.06 s      0.42%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     2900 of  1000000 - time:      2.900E-08 [s] - CPU time:       15.6 [s] - est. time required:     1 [h] 29 [m] - number of particles:      27390 - number of collisions:        112 - number of reactions:         46
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         12.75 s     12.75 s     12.75 s     82.75%.
+ Particle movement:       2.50 s      2.50 s      2.50 s     16.25%.
+ File output:             0.06 s      0.06 s      0.06 s      0.39%.
+ MPI particle comm.:      0.03 s      0.03 s      0.03 s      0.17%.
+ Collisions:              0.07 s      0.07 s      0.07 s      0.44%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     3000 of  1000000 - time:      3.000E-08 [s] - CPU time:       16.3 [s] - est. time required:     1 [h] 30 [m] - number of particles:      29080 - number of collisions:        111 - number of reactions:         41
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         13.15 s     13.15 s     13.15 s     81.78%.
+ Particle movement:       2.76 s      2.76 s      2.76 s     17.18%.
+ File output:             0.06 s      0.06 s      0.06 s      0.40%.
+ MPI particle comm.:      0.03 s      0.03 s      0.03 s      0.18%.
+ Collisions:              0.07 s      0.07 s      0.07 s      0.47%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     3100 of  1000000 - time:      3.100E-08 [s] - CPU time:       17.0 [s] - est. time required:     1 [h] 31 [m] - number of particles:      30648 - number of collisions:        125 - number of reactions:         45
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         13.54 s     13.54 s     13.54 s     80.81%.
+ Particle movement:       3.03 s      3.03 s      3.03 s     18.09%.
+ File output:             0.07 s      0.07 s      0.07 s      0.42%.
+ MPI particle comm.:      0.03 s      0.03 s      0.03 s      0.19%.
+ Collisions:              0.08 s      0.08 s      0.08 s      0.49%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     3200 of  1000000 - time:      3.200E-08 [s] - CPU time:       17.7 [s] - est. time required:     1 [h] 32 [m] - number of particles:      32222 - number of collisions:        130 - number of reactions:         56
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         13.95 s     13.95 s     13.95 s     79.85%.
+ Particle movement:       3.32 s      3.32 s      3.32 s     19.01%.
+ File output:             0.07 s      0.07 s      0.07 s      0.43%.
+ MPI particle comm.:      0.03 s      0.03 s      0.03 s      0.20%.
+ Collisions:              0.09 s      0.09 s      0.09 s      0.51%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     3300 of  1000000 - time:      3.300E-08 [s] - CPU time:       18.5 [s] - est. time required:     1 [h] 32 [m] - number of particles:      33703 - number of collisions:        136 - number of reactions:         58
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         14.35 s     14.35 s     14.35 s     78.91%.
+ Particle movement:       3.62 s      3.62 s      3.62 s     19.91%.
+ File output:             0.08 s      0.08 s      0.08 s      0.43%.
+ MPI particle comm.:      0.04 s      0.04 s      0.04 s      0.20%.
+ Collisions:              0.10 s      0.10 s      0.10 s      0.54%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     3400 of  1000000 - time:      3.400E-08 [s] - CPU time:       19.2 [s] - est. time required:     1 [h] 33 [m] - number of particles:      35104 - number of collisions:        147 - number of reactions:         59
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         14.74 s     14.74 s     14.74 s     77.99%.
+ Particle movement:       3.93 s      3.93 s      3.93 s     20.79%.
+ File output:             0.08 s      0.08 s      0.08 s      0.44%.
+ MPI particle comm.:      0.04 s      0.04 s      0.04 s      0.21%.
+ Collisions:              0.11 s      0.11 s      0.11 s      0.56%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     3500 of  1000000 - time:      3.500E-08 [s] - CPU time:       20.0 [s] - est. time required:     1 [h] 34 [m] - number of particles:      36383 - number of collisions:        158 - number of reactions:         62
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         15.14 s     15.14 s     15.14 s     77.09%.
+ Particle movement:       4.25 s      4.25 s      4.25 s     21.65%.
+ File output:             0.09 s      0.09 s      0.09 s      0.45%.
+ MPI particle comm.:      0.04 s      0.04 s      0.04 s      0.22%.
+ Collisions:              0.12 s      0.12 s      0.12 s      0.60%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     3600 of  1000000 - time:      3.600E-08 [s] - CPU time:       20.7 [s] - est. time required:     1 [h] 35 [m] - number of particles:      37467 - number of collisions:        159 - number of reactions:         62
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         15.54 s     15.54 s     15.54 s     76.22%.
+ Particle movement:       4.58 s      4.58 s      4.58 s     22.48%.
+ File output:             0.09 s      0.09 s      0.09 s      0.45%.
+ MPI particle comm.:      0.05 s      0.05 s      0.05 s      0.22%.
+ Collisions:              0.13 s      0.13 s      0.13 s      0.62%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     3700 of  1000000 - time:      3.700E-08 [s] - CPU time:       21.5 [s] - est. time required:     1 [h] 36 [m] - number of particles:      38568 - number of collisions:        142 - number of reactions:         63
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         15.94 s     15.94 s     15.94 s     75.39%.
+ Particle movement:       4.92 s      4.92 s      4.92 s     23.29%.
+ File output:             0.10 s      0.10 s      0.10 s      0.46%.
+ MPI particle comm.:      0.05 s      0.05 s      0.05 s      0.23%.
+ Collisions:              0.14 s      0.14 s      0.14 s      0.64%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     3800 of  1000000 - time:      3.800E-08 [s] - CPU time:       22.3 [s] - est. time required:     1 [h] 37 [m] - number of particles:      39566 - number of collisions:        146 - number of reactions:         60
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         16.33 s     16.33 s     16.33 s     74.57%.
+ Particle movement:       5.27 s      5.27 s      5.27 s     24.08%.
+ File output:             0.10 s      0.10 s      0.10 s      0.46%.
+ MPI particle comm.:      0.05 s      0.05 s      0.05 s      0.24%.
+ Collisions:              0.14 s      0.14 s      0.14 s      0.66%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     3900 of  1000000 - time:      3.900E-08 [s] - CPU time:       23.1 [s] - est. time required:     1 [h] 38 [m] - number of particles:      40493 - number of collisions:        133 - number of reactions:         61
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         16.73 s     16.73 s     16.73 s     73.76%.
+ Particle movement:       5.64 s      5.64 s      5.64 s     24.85%.
+ File output:             0.11 s      0.11 s      0.11 s      0.47%.
+ MPI particle comm.:      0.06 s      0.06 s      0.06 s      0.24%.
+ Collisions:              0.15 s      0.15 s      0.15 s      0.68%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     4000 of  1000000 - time:      4.000E-08 [s] - CPU time:       23.9 [s] - est. time required:     1 [h] 39 [m] - number of particles:      41416 - number of collisions:        145 - number of reactions:         78
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         17.14 s     17.14 s     17.14 s     72.98%.
+ Particle movement:       6.01 s      6.01 s      6.01 s     25.60%.
+ File output:             0.11 s      0.11 s      0.11 s      0.47%.
+ MPI particle comm.:      0.06 s      0.06 s      0.06 s      0.25%.
+ Collisions:              0.16 s      0.16 s      0.16 s      0.70%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     4100 of  1000000 - time:      4.100E-08 [s] - CPU time:       24.7 [s] - est. time required:     1 [h] 40 [m] - number of particles:      42381 - number of collisions:        211 - number of reactions:         96
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         17.54 s     17.54 s     17.54 s     72.22%.
+ Particle movement:       6.39 s      6.39 s      6.39 s     26.32%.
+ File output:             0.12 s      0.12 s      0.12 s      0.49%.
+ MPI particle comm.:      0.06 s      0.06 s      0.06 s      0.26%.
+ Collisions:              0.17 s      0.17 s      0.17 s      0.72%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     4200 of  1000000 - time:      4.200E-08 [s] - CPU time:       25.6 [s] - est. time required:     1 [h] 41 [m] - number of particles:      43209 - number of collisions:        165 - number of reactions:         68
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         17.94 s     17.94 s     17.94 s     71.48%.
+ Particle movement:       6.78 s      6.78 s      6.78 s     27.03%.
+ File output:             0.12 s      0.12 s      0.12 s      0.49%.
+ MPI particle comm.:      0.07 s      0.07 s      0.07 s      0.26%.
+ Collisions:              0.18 s      0.18 s      0.18 s      0.74%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     4300 of  1000000 - time:      4.300E-08 [s] - CPU time:       26.4 [s] - est. time required:     1 [h] 41 [m] - number of particles:      44029 - number of collisions:        177 - number of reactions:         83
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         18.34 s     18.34 s     18.34 s     70.79%.
+ Particle movement:       7.17 s      7.17 s      7.17 s     27.69%.
+ File output:             0.13 s      0.13 s      0.13 s      0.50%.
+ MPI particle comm.:      0.07 s      0.07 s      0.07 s      0.27%.
+ Collisions:              0.20 s      0.20 s      0.20 s      0.75%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     4400 of  1000000 - time:      4.400E-08 [s] - CPU time:       27.3 [s] - est. time required:     1 [h] 42 [m] - number of particles:      44724 - number of collisions:        162 - number of reactions:         60
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         18.75 s     18.75 s     18.75 s     70.09%.
+ Particle movement:       7.58 s      7.58 s      7.58 s     28.35%.
+ File output:             0.14 s      0.14 s      0.14 s      0.51%.
+ MPI particle comm.:      0.07 s      0.07 s      0.07 s      0.27%.
+ Collisions:              0.21 s      0.21 s      0.21 s      0.78%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     4500 of  1000000 - time:      4.500E-08 [s] - CPU time:       28.1 [s] - est. time required:     1 [h] 43 [m] - number of particles:      45374 - number of collisions:        171 - number of reactions:         88
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         19.15 s     19.15 s     19.15 s     69.44%.
+ Particle movement:       7.99 s      7.99 s      7.99 s     28.97%.
+ File output:             0.14 s      0.14 s      0.14 s      0.52%.
+ MPI particle comm.:      0.08 s      0.08 s      0.08 s      0.28%.
+ Collisions:              0.22 s      0.22 s      0.22 s      0.79%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     4600 of  1000000 - time:      4.600E-08 [s] - CPU time:       29.0 [s] - est. time required:     1 [h] 44 [m] - number of particles:      45923 - number of collisions:        177 - number of reactions:         78
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         19.55 s     19.55 s     19.55 s     68.82%.
+ Particle movement:       8.40 s      8.40 s      8.40 s     29.57%.
+ File output:             0.15 s      0.15 s      0.15 s      0.52%.
+ MPI particle comm.:      0.08 s      0.08 s      0.08 s      0.28%.
+ Collisions:              0.23 s      0.23 s      0.23 s      0.81%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     4700 of  1000000 - time:      4.700E-08 [s] - CPU time:       29.8 [s] - est. time required:     1 [h] 45 [m] - number of particles:      46344 - number of collisions:        174 - number of reactions:         78
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         19.95 s     19.95 s     19.95 s     68.23%.
+ Particle movement:       8.81 s      8.81 s      8.81 s     30.13%.
+ File output:             0.15 s      0.15 s      0.15 s      0.53%.
+ MPI particle comm.:      0.08 s      0.08 s      0.08 s      0.29%.
+ Collisions:              0.24 s      0.24 s      0.24 s      0.82%.
+ ====================================================================
+ KSPConvergedReason =            2
+ > CC [cathode]: V= -2.000000E+03 V, Itot=  0.000000E+00 A, Ielec=  0.000000E+00 A, Iion=  0.000000E+00 A, Isee=  0.000000E+00 A, Target=  5.000000E-01 A, Err=-100.000%
+    Timestep:     4800 of  1000000 - time:      4.800E-08 [s] - CPU time:       30.7 [s] - est. time required:     1 [h] 46 [m] - number of particles:      46797 - number of collisions:        164 - number of reactions:         76
+ ===================================================================
+ =======================     TIMING INFO     =======================
+ ===================================================================
+ Section             |    MAX    |    MIN    |    AVG    |  MAX/TOT
+ Misc:                    0.00 s      0.00 s      0.00 s      0.00%.
+ Field solution:         20.34 s     20.34 s     20.34 s     67.65%.
+ Particle movement:       9.23 s      9.23 s      9.23 s     30.68%.
+ File output:             0.16 s      0.16 s      0.16 s      0.53%.
+ MPI particle comm.:      0.09 s      0.09 s      0.09 s      0.29%.
+ Collisions:              0.25 s      0.25 s      0.25 s      0.84%.
+ ====================================================================
+ KSPConvergedReason =            2
