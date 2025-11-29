@@ -6867,4 +6867,129 @@ MODULE fields
       ! END IF
    END SUBROUTINE COMPUTE_FLOATING_POTENTIAL_FOR_CONDUCTIVE_SURFACE
 
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! SUBROUTINE UPDATE_PID_VOLTAGE -> Update boundary voltage using PID control!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   
+   SUBROUTINE UPDATE_PID_VOLTAGE
+   
+      IMPLICIT NONE
+      
+      INTEGER :: IPG, I_WINDOW
+      REAL(KIND=8) :: LOCAL_CHARGE_ION, LOCAL_CHARGE_ELEC, LOCAL_CHARGE_SEE
+      REAL(KIND=8) :: GLOBAL_CHARGE_ION, GLOBAL_CHARGE_ELEC, GLOBAL_CHARGE_SEE
+      REAL(KIND=8) :: CURRENT_ION, CURRENT_ELEC, CURRENT_SEE, CURRENT_TOTAL
+      REAL(KIND=8) :: SMOOTHED_CURRENT, CURRENT_ERROR, ERROR_DERIVATIVE
+      REAL(KIND=8) :: PID_OUTPUT, NEW_VOLTAGE, PID_SIGN
+      
+      ! Loop over all boundaries
+      DO IPG = 1, N_GRID_BC
+         IF (.NOT. GRID_BC(IPG)%IS_CONSTANT_CURRENT) CYCLE
+         
+         ! ===== Step 1: MPI Reduction =====
+         LOCAL_CHARGE_ION = GRID_BC(IPG)%TIMESTEP_CHARGE_ION
+         LOCAL_CHARGE_ELEC = GRID_BC(IPG)%TIMESTEP_CHARGE_ELEC
+         LOCAL_CHARGE_SEE = GRID_BC(IPG)%TIMESTEP_CHARGE_SEE
+         
+         CALL MPI_ALLREDUCE(LOCAL_CHARGE_ION, GLOBAL_CHARGE_ION, 1, &
+                            MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+         CALL MPI_ALLREDUCE(LOCAL_CHARGE_ELEC, GLOBAL_CHARGE_ELEC, 1, &
+                            MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+         CALL MPI_ALLREDUCE(LOCAL_CHARGE_SEE, GLOBAL_CHARGE_SEE, 1, &
+                            MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+                  ! Convert charge to current: I = Q / Δt
+          CURRENT_ION = GLOBAL_CHARGE_ION / DT
+          CURRENT_ELEC = GLOBAL_CHARGE_ELEC / DT
+          CURRENT_SEE = GLOBAL_CHARGE_SEE / DT
+          CURRENT_TOTAL = CURRENT_ION + CURRENT_ELEC + CURRENT_SEE
+          
+          ! Reset timestep accumulators
+          GRID_BC(IPG)%TIMESTEP_CHARGE_ION = 0.d0
+          GRID_BC(IPG)%TIMESTEP_CHARGE_ELEC = 0.d0
+          GRID_BC(IPG)%TIMESTEP_CHARGE_SEE = 0.d0
+         
+         ! ===== Step 2: Sliding Window Filter =====
+         GRID_BC(IPG)%WINDOW_INDEX = GRID_BC(IPG)%WINDOW_INDEX + 1
+         IF (GRID_BC(IPG)%WINDOW_INDEX > GRID_BC(IPG)%SLIDING_WINDOW_SIZE) THEN
+            GRID_BC(IPG)%WINDOW_INDEX = 1
+         END IF
+         
+         I_WINDOW = GRID_BC(IPG)%WINDOW_INDEX
+         GRID_BC(IPG)%CURRENT_WINDOW_ION(I_WINDOW) = CURRENT_ION
+         GRID_BC(IPG)%CURRENT_WINDOW_ELEC(I_WINDOW) = CURRENT_ELEC
+         GRID_BC(IPG)%CURRENT_WINDOW_SEE(I_WINDOW) = CURRENT_SEE
+         
+         ! Compute smoothed current (average of window)
+         SMOOTHED_CURRENT = SUM(GRID_BC(IPG)%CURRENT_WINDOW_ION) + &
+                           SUM(GRID_BC(IPG)%CURRENT_WINDOW_ELEC) + &
+                           SUM(GRID_BC(IPG)%CURRENT_WINDOW_SEE)
+         SMOOTHED_CURRENT = SMOOTHED_CURRENT / DBLE(GRID_BC(IPG)%SLIDING_WINDOW_SIZE)
+         
+         ! ===== Step 3: State Machine =====
+         IF (.NOT. GRID_BC(IPG)%CC_MODE_ACTIVE) THEN
+            ! CV Mode: Check if we should switch to CC mode
+            IF (ABS(SMOOTHED_CURRENT) >= ABS(GRID_BC(IPG)%TARGET_CURRENT)) THEN
+               GRID_BC(IPG)%CC_MODE_ACTIVE = .TRUE.
+               ! Initialize PID state for bumpless transfer
+               GRID_BC(IPG)%ERROR_INTEGRAL = 0.d0
+               GRID_BC(IPG)%ERROR_PREV = 0.d0
+               IF (PROC_ID == 0) THEN
+                  WRITE(*,*) '> Constant current BC switched to CC mode at timestep', tID
+                  WRITE(*,*) '  Boundary: ', TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME)
+                  WRITE(*,*) '  Smoothed current:', SMOOTHED_CURRENT, ' A'
+                  WRITE(*,*) '  Target current:', GRID_BC(IPG)%TARGET_CURRENT, ' A'
+               END IF
+            ELSE
+               ! Stay in CV mode: voltage = initial voltage
+               GRID_BC(IPG)%WALL_POTENTIAL = GRID_BC(IPG)%INITIAL_VOLTAGE
+            END IF
+         END IF
+                  ! ===== Step 4: PID Control (only in CC mode) =====
+          IF (GRID_BC(IPG)%CC_MODE_ACTIVE) THEN
+             ! Compute error (target - measured)
+             CURRENT_ERROR = GRID_BC(IPG)%TARGET_CURRENT - SMOOTHED_CURRENT
+             
+             ! Update integral term
+             GRID_BC(IPG)%ERROR_INTEGRAL = GRID_BC(IPG)%ERROR_INTEGRAL + CURRENT_ERROR * DT
+             
+             ! Compute derivative term
+             ERROR_DERIVATIVE = (CURRENT_ERROR - GRID_BC(IPG)%ERROR_PREV) / DT
+             
+             ! PID formula
+             PID_OUTPUT = GRID_BC(IPG)%PID_KP * CURRENT_ERROR + &
+                         GRID_BC(IPG)%PID_KI * GRID_BC(IPG)%ERROR_INTEGRAL + &
+                         GRID_BC(IPG)%PID_KD * ERROR_DERIVATIVE
+             
+             ! Determine PID sign based on voltage polarity
+             ! For CATHODES (negative voltage attracting positive ions):
+             !   - When I < I_target: error > 0, PID_OUTPUT > 0
+             !   - Need voltage to become MORE negative (ΔV < 0)
+             !   - Therefore invert PID output sign (PID_SIGN = -1)
+             ! For ANODES (positive voltage): normal PID direction (PID_SIGN = +1)
+             IF (GRID_BC(IPG)%INITIAL_VOLTAGE < 0.d0) THEN
+                PID_SIGN = -1.d0   ! Invert for cathodes (negative voltage)
+             ELSE
+                PID_SIGN = +1.d0   ! Normal for anodes (positive voltage)
+             END IF
+             
+             ! Update voltage with correct sign
+             NEW_VOLTAGE = GRID_BC(IPG)%WALL_POTENTIAL + PID_SIGN * PID_OUTPUT
+             
+             ! Apply voltage clamping for safety
+             IF (GRID_BC(IPG)%APPLY_VOLTAGE_LIMITS) THEN
+                NEW_VOLTAGE = MAX(GRID_BC(IPG)%VOLTAGE_MIN, &
+                                  MIN(GRID_BC(IPG)%VOLTAGE_MAX, NEW_VOLTAGE))
+             END IF
+             
+             GRID_BC(IPG)%WALL_POTENTIAL = NEW_VOLTAGE
+             
+             ! Update previous error
+             GRID_BC(IPG)%ERROR_PREV = CURRENT_ERROR
+          END IF
+         
+      END DO
+      
+   END SUBROUTINE UPDATE_PID_VOLTAGE
+
 END MODULE fields

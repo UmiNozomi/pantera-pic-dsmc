@@ -1141,6 +1141,46 @@ MODULE initialization
          READ(STRARRAY(4), '(ES14.0)') GRID_BC(IPG)%WALL_POTENTIAL
          READ(STRARRAY(5), '(ES14.0)') GRID_BC(IPG)%RF_FREQUENCY
          READ(STRARRAY(6), '(ES14.0)') GRID_BC(IPG)%CAPACITANCE
+      ELSE IF (STRARRAY(2) == 'constant_current') THEN
+         GRID_BC(IPG)%FIELD_BC = DIRICHLET_BC
+         GRID_BC(IPG)%IS_CONSTANT_CURRENT = .TRUE.
+         
+         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%TARGET_CURRENT
+         READ(STRARRAY(4), '(ES14.0)') GRID_BC(IPG)%INITIAL_VOLTAGE
+         READ(STRARRAY(5), '(ES14.0)') GRID_BC(IPG)%PID_KP
+         READ(STRARRAY(6), '(ES14.0)') GRID_BC(IPG)%PID_KI
+         READ(STRARRAY(7), '(ES14.0)') GRID_BC(IPG)%PID_KD
+         
+         IF (N_STR >= 8) THEN
+            READ(STRARRAY(8), '(I10)') GRID_BC(IPG)%SLIDING_WINDOW_SIZE
+         ELSE
+            GRID_BC(IPG)%SLIDING_WINDOW_SIZE = 10
+         END IF
+         
+         ! Optional: Voltage safety limits (parameters 9 and 10)
+         IF (N_STR >= 9) THEN
+            READ(STRARRAY(9), '(ES14.0)') GRID_BC(IPG)%VOLTAGE_MIN
+            GRID_BC(IPG)%APPLY_VOLTAGE_LIMITS = .TRUE.
+         END IF
+         
+         IF (N_STR >= 10) THEN
+            READ(STRARRAY(10), '(ES14.0)') GRID_BC(IPG)%VOLTAGE_MAX
+         END IF
+         
+         GRID_BC(IPG)%WALL_POTENTIAL = GRID_BC(IPG)%INITIAL_VOLTAGE
+         
+         ALLOCATE(GRID_BC(IPG)%CURRENT_WINDOW_ION(GRID_BC(IPG)%SLIDING_WINDOW_SIZE))
+         ALLOCATE(GRID_BC(IPG)%CURRENT_WINDOW_ELEC(GRID_BC(IPG)%SLIDING_WINDOW_SIZE))
+         ALLOCATE(GRID_BC(IPG)%CURRENT_WINDOW_SEE(GRID_BC(IPG)%SLIDING_WINDOW_SIZE))
+         
+         GRID_BC(IPG)%CURRENT_WINDOW_ION = 0.d0
+         GRID_BC(IPG)%CURRENT_WINDOW_ELEC = 0.d0
+         GRID_BC(IPG)%CURRENT_WINDOW_SEE = 0.d0
+         
+         IF (PROC_ID == 0) THEN
+            WRITE(*,'(A,A,A,ES10.3,A)') '> Constant current BC: ', TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME), &
+                  ' (Target=', GRID_BC(IPG)%TARGET_CURRENT, ' A)'
+         END IF
       ELSE
          CALL ERROR_ABORT('Error in boundary condition definition.')
       END IF

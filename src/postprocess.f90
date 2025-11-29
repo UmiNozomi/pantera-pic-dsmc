@@ -1761,7 +1761,7 @@ MODULE postprocess
 
       IMPLICIT NONE
 
-      INTEGER                            :: JP, JS, JC, JR
+      INTEGER                            :: JP, JS, JC, JR, IPG
    
       INTEGER, ALLOCATABLE, DIMENSION(:) :: TOT_NUM, TOT_REACT_COUNTS
       REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: TOT_EE_PART, TOT_KE_PART
@@ -1769,6 +1769,7 @@ MODULE postprocess
       REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:) :: TOT_MOMENTUM
       REAL(KIND=8)                       :: TOT_KE, TOT_IE, TOT_FE, TOT_EE_FIELD, PHI, CURRENT_TIME, FIELD_POWER_TOT
       REAL(KIND=8)                       :: CFNUM, VOL
+      REAL(KIND=8)                       :: CURRENT_ION_SMOOTH, CURRENT_ELEC_SMOOTH, CURRENT_SEE_SMOOTH, CURRENT_TOTAL_SMOOTH
 
       CHARACTER*256                      :: file_name
       CHARACTER*2048                     :: HEADER_STRING
@@ -1896,17 +1897,41 @@ MODULE postprocess
                HEADER_STRING = TRIM(HEADER_STRING) // ' eepart_' // TRIM(SPECIES(JS)%NAME)
             END DO
             HEADER_STRING = TRIM(HEADER_STRING) // ' toteefield tote fieldpower coilcurrent'
-            DO JS = 1, N_REACTIONS
-               HEADER_STRING = TRIM(HEADER_STRING) // ' nreact_' // ITOA(JS)
+            DO JR = 1, N_REACTIONS
+               HEADER_STRING = TRIM(HEADER_STRING) // ' nreact_' // ITOA(JR)
+            END DO
+            ! Add constant current control columns
+            DO IPG = 1, N_GRID_BC
+               IF (GRID_BC(IPG)%IS_CONSTANT_CURRENT) THEN
+                  HEADER_STRING = TRIM(HEADER_STRING) // ' V_' // TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME) &
+                                                      // ' I_tot_' // TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME) &
+                                                      // ' I_ion_' // TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME) &
+                                                      // ' I_elec_' // TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME) &
+                                                      // ' I_see_' // TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME)
+               END IF
             END DO
 
             WRITE(54331,*) TRIM(HEADER_STRING)
          END IF
 
-         WRITE(54331,*) CURRENT_TIME, TOT_NUM, TOT_MOMENTUM, SUM(TOT_MOMENTUM, DIM=2), &
+         ! Write basic conservation data
+         WRITE(54331,'(999(ES14.6))', ADVANCE='NO') CURRENT_TIME, REAL(TOT_NUM, KIND=8), TOT_MOMENTUM, SUM(TOT_MOMENTUM, DIM=2), &
          TOT_KE_PART, TOT_IE, TOT_EE_PART,TOT_EE_FIELD, &
          SUM(TOT_KE_PART) + TOT_IE + TOT_EE_FIELD, &
-         FIELD_POWER_TOT, COIL_CURRENT, TOT_REACT_COUNTS !TOT_FE, TOT_EE
+         FIELD_POWER_TOT, COIL_CURRENT, REAL(TOT_REACT_COUNTS, KIND=8)
+         
+         ! Write constant current control data for each boundary
+         DO IPG = 1, N_GRID_BC
+            IF (GRID_BC(IPG)%IS_CONSTANT_CURRENT) THEN
+               CURRENT_ION_SMOOTH = SUM(GRID_BC(IPG)%CURRENT_WINDOW_ION) / DBLE(GRID_BC(IPG)%SLIDING_WINDOW_SIZE)
+               CURRENT_ELEC_SMOOTH = SUM(GRID_BC(IPG)%CURRENT_WINDOW_ELEC) / DBLE(GRID_BC(IPG)%SLIDING_WINDOW_SIZE)
+               CURRENT_SEE_SMOOTH = SUM(GRID_BC(IPG)%CURRENT_WINDOW_SEE) / DBLE(GRID_BC(IPG)%SLIDING_WINDOW_SIZE)
+               CURRENT_TOTAL_SMOOTH = CURRENT_ION_SMOOTH + CURRENT_ELEC_SMOOTH + CURRENT_SEE_SMOOTH
+               WRITE(54331,'(5(ES14.6))', ADVANCE='NO') GRID_BC(IPG)%WALL_POTENTIAL, &
+                     CURRENT_TOTAL_SMOOTH, CURRENT_ION_SMOOTH, CURRENT_ELEC_SMOOTH, CURRENT_SEE_SMOOTH
+            END IF
+         END DO
+         WRITE(54331,*)  ! New line
          CLOSE(54331)
 
       ELSE

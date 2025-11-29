@@ -42,6 +42,10 @@ MODULE timecycle
       REAL(KIND=8) :: FIELD_POWER_TOT
       REAL(KIND=8) :: CURRENT_TIME, CURRENT_CPU_TIME, EST_TIME
       INTEGER :: EST_TIME_H, EST_TIME_M
+      
+      ! Constant current output variables
+      INTEGER :: IPG
+      REAL(KIND=8) :: CC_I_ION, CC_I_ELEC, CC_I_SEE, CC_I_TOT, CC_ERROR_PCT
 
       CHARACTER(len=512) :: stringTMP
 
@@ -155,6 +159,33 @@ MODULE timecycle
                            ' - number of particles: ', NP_TOT, &
                            ' - number of collisions: ', NCOLL_TOT, &
                            ' - number of reactions: ', NREAC_TOT
+            
+            ! Constant current control output
+            DO IPG = 1, N_GRID_BC
+               IF (GRID_BC(IPG)%IS_CONSTANT_CURRENT) THEN
+                  ! Calculate smoothed currents
+                  CC_I_ION = SUM(GRID_BC(IPG)%CURRENT_WINDOW_ION) / DBLE(GRID_BC(IPG)%SLIDING_WINDOW_SIZE)
+                  CC_I_ELEC = SUM(GRID_BC(IPG)%CURRENT_WINDOW_ELEC) / DBLE(GRID_BC(IPG)%SLIDING_WINDOW_SIZE)
+                  CC_I_SEE = SUM(GRID_BC(IPG)%CURRENT_WINDOW_SEE) / DBLE(GRID_BC(IPG)%SLIDING_WINDOW_SIZE)
+                  CC_I_TOT = CC_I_ION + CC_I_ELEC + CC_I_SEE
+                  
+                  IF (ABS(GRID_BC(IPG)%TARGET_CURRENT) > 1.d-20) THEN
+                     CC_ERROR_PCT = (CC_I_TOT - GRID_BC(IPG)%TARGET_CURRENT) / GRID_BC(IPG)%TARGET_CURRENT * 100.d0
+                  ELSE
+                     CC_ERROR_PCT = 0.d0
+                  END IF
+                  
+                  WRITE(*, '(3A, 6(A, ES14.6, A), A, F8.3, A)') &
+                     ' > CC [', TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME), ']: ', &
+                     'V=', GRID_BC(IPG)%WALL_POTENTIAL, ' V, ', &
+                     'Itot=', CC_I_TOT, ' A, ', &
+                     'Ielec=', CC_I_ELEC, ' A, ', &
+                     'Iion=', CC_I_ION, ' A, ', &
+                     'Isee=', CC_I_SEE, ' A, ', &
+                     'Target=', GRID_BC(IPG)%TARGET_CURRENT, ' A, ', &
+                     'Err=', CC_ERROR_PCT, '%'
+               END IF
+            END DO
 
             ! Use this tho have the coil current and field power output to console.
             ! WRITE(stringTMP, '(A13,I8,A4,I8,A9,ES14.3,A17,F10.1,A27,I5,A5,I2,A4,A24,I10, &
@@ -204,6 +235,13 @@ MODULE timecycle
          ! ########### Advect particles and update field ############################################
 
          IF (PIC_TYPE == EXPLICIT) THEN
+            CALL TIMER_START(3)
+            CALL ADVECT
+            CALL TIMER_STOP(3)
+            
+            ! Update boundary voltages for constant current control AFTER advection
+            CALL UPDATE_PID_VOLTAGE
+            
             CALL SET_WALL_POTENTIAL
             CALL DEPOSIT_CHARGE(particles)
 
@@ -212,11 +250,13 @@ MODULE timecycle
             CALL COMPUTE_E_FIELD
             CALL TIMER_STOP(2)
 
+         ELSE IF (PIC_TYPE == EXPLICITLIMITED) THEN   
             CALL TIMER_START(3)
             CALL ADVECT
             CALL TIMER_STOP(3)
-
-         ELSE IF (PIC_TYPE == EXPLICITLIMITED) THEN   
+            
+            ! Update boundary voltages for constant current control AFTER advection
+            CALL UPDATE_PID_VOLTAGE
            
             CALL ASSEMBLE_POISSON
             CALL SET_WALL_POTENTIAL
@@ -227,10 +267,6 @@ MODULE timecycle
             CALL SOLVE_POISSON
             CALL COMPUTE_E_FIELD
             CALL TIMER_STOP(2)
-
-            CALL TIMER_START(3)
-            CALL ADVECT
-            CALL TIMER_STOP(3)
          
          ELSE IF (PIC_TYPE == SEMIIMPLICIT) THEN
          
@@ -1453,6 +1489,36 @@ MODULE timecycle
                               END IF
                            END IF
 
+                           ! ===== Constant current control: accumulate current statistics =====
+                           IF (GRID_BC(FACE_PG)%IS_CONSTANT_CURRENT) THEN
+                              ! Get particle weight
+                              IF (BOOL_RADIAL_WEIGHTING) THEN
+                                 WEIGHT_RATIO = CELL_FNUM(particles(IP)%IC)
+                              ELSE
+                                 WEIGHT_RATIO = FNUM
+                              END IF
+                              
+                              CHARGE = SPECIES(particles(IP)%S_ID)%CHARGE
+                              
+                              ! 1. Impact current (ions positive, electrons negative)
+                              IF (CHARGE > 0.5d0) THEN
+                                 ! Positive ion impact
+                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION = &
+                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION + QE * CHARGE * WEIGHT_RATIO
+                              ELSE IF (CHARGE < -0.5d0) THEN
+                                 ! Electron/negative ion impact
+                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC = &
+                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC + QE * CHARGE * WEIGHT_RATIO
+                              END IF
+                              
+                              ! 2. SEE current (secondary electron emission, positive contribution)
+                              IF (N_SEE_SECONDARY > 0) THEN
+                                 ! SEE electrons emitted from electrode (electron loss = positive current)
+                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE = &
+                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE + QE * DBLE(N_SEE_SECONDARY) * WEIGHT_RATIO
+                              END IF
+                           END IF
+
                            IF (GRID_BC(FACE_PG)%REACT) THEN
                               CALL WALL_REACT(particles, IP, REMOVE_PART(IP))
                            END IF
@@ -1479,6 +1545,36 @@ MODULE timecycle
                                                                             SEE_MATERIAL_ID, particles(IP)%IC, SEE_SINGLE_PARTICLE)
                                     CALL ADD_PARTICLE_ARRAY(SEE_SINGLE_PARTICLE, NP_PROC, particles)
                                  END DO
+                              END IF
+                           END IF
+
+                           ! ===== Constant current control: accumulate current statistics =====
+                           IF (GRID_BC(FACE_PG)%IS_CONSTANT_CURRENT) THEN
+                              ! Get particle weight
+                              IF (BOOL_RADIAL_WEIGHTING) THEN
+                                 WEIGHT_RATIO = CELL_FNUM(particles(IP)%IC)
+                              ELSE
+                                 WEIGHT_RATIO = FNUM
+                              END IF
+                              
+                              CHARGE = SPECIES(particles(IP)%S_ID)%CHARGE
+                              
+                              ! 1. Impact current (ions positive, electrons negative)
+                              IF (CHARGE > 0.5d0) THEN
+                                 ! Positive ion impact
+                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION = &
+                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION + QE * CHARGE * WEIGHT_RATIO
+                              ELSE IF (CHARGE < -0.5d0) THEN
+                                 ! Electron/negative ion impact
+                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC = &
+                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC + QE * CHARGE * WEIGHT_RATIO
+                              END IF
+                              
+                              ! 2. SEE current (secondary electron emission, positive contribution)
+                              IF (N_SEE_SECONDARY > 0) THEN
+                                 ! SEE electrons emitted from electrode (electron loss = positive current)
+                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE = &
+                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE + QE * DBLE(N_SEE_SECONDARY) * WEIGHT_RATIO
                               END IF
                            END IF
 

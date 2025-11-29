@@ -250,6 +250,36 @@ MODULE global
       REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:,:) :: MAX_P_UP
       REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:,:) :: P_COLL_UP
 
+      ! Constant current control parameters
+      LOGICAL :: IS_CONSTANT_CURRENT = .FALSE.
+      REAL(KIND=8) :: TARGET_CURRENT            ! Target current [A]
+      REAL(KIND=8) :: INITIAL_VOLTAGE           ! Initial voltage for CV mode [V]
+      REAL(KIND=8) :: PID_KP, PID_KI, PID_KD    ! PID coefficients
+      INTEGER :: SLIDING_WINDOW_SIZE = 10        ! Number of timesteps for averaging
+      
+      ! State machine
+      LOGICAL :: CC_MODE_ACTIVE = .FALSE.        ! FALSE = CV mode, TRUE = CC mode
+      
+      ! Sliding window for current filtering
+      REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: CURRENT_WINDOW_ION
+      REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: CURRENT_WINDOW_ELEC
+      REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: CURRENT_WINDOW_SEE
+      INTEGER :: WINDOW_INDEX = 0
+      
+      ! Current statistics (per timestep, per boundary)
+      REAL(KIND=8) :: TIMESTEP_CHARGE_ION = 0.d0   ! Ion charge accumulated this timestep [C]
+      REAL(KIND=8) :: TIMESTEP_CHARGE_ELEC = 0.d0  ! Electron charge accumulated this timestep [C]
+      REAL(KIND=8) :: TIMESTEP_CHARGE_SEE = 0.d0   ! SEE charge accumulated this timestep [C]
+      
+      ! PID controller state
+      REAL(KIND=8) :: ERROR_INTEGRAL = 0.d0
+      REAL(KIND=8) :: ERROR_PREV = 0.d0
+      
+      ! Voltage safety limits
+      REAL(KIND=8) :: VOLTAGE_MIN = -1.0d10     ! Minimum allowed voltage [V]
+      REAL(KIND=8) :: VOLTAGE_MAX = +1.0d10     ! Maximum allowed voltage [V]
+      LOGICAL :: APPLY_VOLTAGE_LIMITS = .FALSE. ! Enable voltage clamping
+
    END TYPE BOUNDARY_CONDITION_DATA_STRUCTURE
 
    TYPE(BOUNDARY_CONDITION_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: GRID_BC
