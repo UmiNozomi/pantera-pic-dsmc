@@ -1520,7 +1520,7 @@ MODULE timecycle
                            END IF
 
                            IF (GRID_BC(FACE_PG)%REACT) THEN
-                              CALL WALL_REACT(particles, IP, REMOVE_PART(IP))
+                              CALL WALL_REACT(particles, IP, REMOVE_PART(IP), FACE_PG)
                            END IF
                            
                            VDOTN = particles(IP)%VX*FACE_NORMAL(1) &
@@ -1579,7 +1579,7 @@ MODULE timecycle
                            END IF
 
                            IF (GRID_BC(FACE_PG)%REACT) THEN
-                              CALL WALL_REACT(particles, IP, REMOVE_PART(IP))
+                              CALL WALL_REACT(particles, IP, REMOVE_PART(IP), FACE_PG)
                            END IF
                            
                            VXPRE = particles(IP)%VX
@@ -1619,7 +1619,7 @@ MODULE timecycle
 
                         ELSE IF (GRID_BC(FACE_PG)%PARTICLE_BC == CLL) THEN
                            IF (GRID_BC(FACE_PG)%REACT) THEN
-                              CALL WALL_REACT(particles, IP, REMOVE_PART(IP))
+                              CALL WALL_REACT(particles, IP, REMOVE_PART(IP), FACE_PG)
                            END IF
 
                            !VXPRE = particles(IP)%VX
@@ -1690,7 +1690,7 @@ MODULE timecycle
                            !CLOSE(66341)
                         ELSE IF (GRID_BC(FACE_PG)%PARTICLE_BC == WB_BC) THEN
                            IF (GRID_BC(FACE_PG)%REACT) THEN
-                              CALL WALL_REACT(particles, IP, REMOVE_PART(IP))
+                              CALL WALL_REACT(particles, IP, REMOVE_PART(IP), FACE_PG)
                            END IF
 
                            VXPRE = particles(IP)%VX
@@ -2023,7 +2023,7 @@ MODULE timecycle
                      particles(IP)%DTRIM = particles(IP)%DTRIM - DTCOLL
 
                      IF (BOOL_REACT(BOUNDCOLL)) THEN
-                        CALL WALL_REACT(particles, IP, REMOVE_PART(IP))
+                        CALL WALL_REACT(particles, IP, REMOVE_PART(IP), FACE_PG)
                      END IF
 
                   ELSE IF (BOOL_DIFFUSE(BOUNDCOLL)) THEN
@@ -2031,7 +2031,7 @@ MODULE timecycle
                      CALL MOVE_PARTICLE(IP, DTCOLL)
                      particles(IP)%DTRIM = particles(IP)%DTRIM - DTCOLL
                      IF (BOOL_REACT(BOUNDCOLL)) THEN
-                        CALL WALL_REACT(particles, IP, REMOVE_PART(IP))
+                        CALL WALL_REACT(particles, IP, REMOVE_PART(IP), FACE_PG)
                      END IF
                      IF (.NOT. REMOVE_PART(IP)) THEN
                         S_ID = particles(IP)%S_ID
@@ -2083,7 +2083,7 @@ MODULE timecycle
                         particles(IP)%DTRIM = particles(IP)%DTRIM - DTCOLL
 
                         IF (WALLS(WALLCOLL)%REACT) THEN
-                           CALL WALL_REACT(particles, IP, REMOVE_PART(IP))
+                           CALL WALL_REACT(particles, IP, REMOVE_PART(IP), FACE_PG)
                         END IF
 
                      END IF
@@ -2099,7 +2099,7 @@ MODULE timecycle
                         CALL MOVE_PARTICLE(IP, DTCOLL)
                         particles(IP)%DTRIM = particles(IP)%DTRIM - DTCOLL
                         IF (WALLS(WALLCOLL)%REACT) THEN
-                           CALL WALL_REACT(particles, IP, REMOVE_PART(IP))
+                           CALL WALL_REACT(particles, IP, REMOVE_PART(IP), FACE_PG)
                         END IF
                         IF (.NOT. REMOVE_PART(IP)) THEN
                            S_ID = particles(IP)%S_ID

@@ -3606,7 +3606,7 @@ MODULE fields
                            END IF
 
                            IF (GRID_BC(FACE_PG)%REACT) THEN
-                              CALL WALL_REACT(part_adv, IP, REMOVE_PART(IP))
+                              CALL WALL_REACT(part_adv, IP, REMOVE_PART(IP), FACE_PG)
                            END IF
                            
                            VDOTN = part_adv(IP)%VX*FACE_NORMAL(1) &
@@ -3634,7 +3634,7 @@ MODULE fields
                            END IF
 
                            IF (GRID_BC(FACE_PG)%REACT) THEN
-                              CALL WALL_REACT(part_adv, IP, REMOVE_PART(IP))
+                              CALL WALL_REACT(part_adv, IP, REMOVE_PART(IP), FACE_PG)
                            END IF
 
                            S_ID = part_adv(IP)%S_ID
@@ -3664,7 +3664,7 @@ MODULE fields
 
                         ELSE IF (GRID_BC(FACE_PG)%PARTICLE_BC == CLL) THEN
                            IF (GRID_BC(FACE_PG)%REACT) THEN
-                              CALL WALL_REACT(part_adv, IP, REMOVE_PART(IP))
+                              CALL WALL_REACT(part_adv, IP, REMOVE_PART(IP), FACE_PG)
                            END IF
 
                            VDOTN = part_adv(IP)%VX*FACE_NORMAL(1) &
@@ -4321,28 +4321,57 @@ MODULE fields
 
    END SUBROUTINE APPLY_B_DIPOLE_FIELD
 
-   SUBROUTINE WALL_REACT(part_adv, IP, REMOVE)
+   SUBROUTINE WALL_REACT(part_adv, IP, REMOVE, FACE_PG)
       
       IMPLICIT NONE
 
       TYPE(PARTICLE_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE, INTENT(INOUT) :: part_adv
       INTEGER, INTENT(IN) :: IP
+      INTEGER, INTENT(IN) :: FACE_PG
       LOGICAL, INTENT(OUT) :: REMOVE
-      INTEGER :: JS, JR, JP
+      INTEGER :: JS, JR, JP, N_REAC
       REAL(KIND=8) :: PROB_SCALE, VEL_SCALE
+      TYPE(WALL_REACTIONS_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: REACTIONS_TO_USE
 
       JS = part_adv(IP)%S_ID
       PROB_SCALE = 1.
       REMOVE = .FALSE.
-      DO JR = 1, N_WALL_REACTIONS
-         IF (WALL_REACTIONS(JR)%R_SP_ID == JS) THEN
-            IF ( rf() .LE. WALL_REACTIONS(JR)%PROB/PROB_SCALE ) THEN
+      
+      ! Determine which reactions to use: boundary-specific or global
+      IF (FACE_PG > 0 .AND. FACE_PG <= N_GRID_BC) THEN
+         IF (GRID_BC(FACE_PG)%N_WALL_REACTIONS > 0) THEN
+            ! Use boundary-specific reactions
+            N_REAC = GRID_BC(FACE_PG)%N_WALL_REACTIONS
+            ALLOCATE(REACTIONS_TO_USE(N_REAC))
+            REACTIONS_TO_USE = GRID_BC(FACE_PG)%WALL_REACTIONS
+         ELSE IF (N_WALL_REACTIONS > 0) THEN
+            ! Fallback to global reactions
+            N_REAC = N_WALL_REACTIONS
+            ALLOCATE(REACTIONS_TO_USE(N_REAC))
+            REACTIONS_TO_USE = WALL_REACTIONS
+         ELSE
+            ! No reactions defined
+            RETURN
+         END IF
+      ELSE IF (N_WALL_REACTIONS > 0) THEN
+         ! Use global reactions
+         N_REAC = N_WALL_REACTIONS
+         ALLOCATE(REACTIONS_TO_USE(N_REAC))
+         REACTIONS_TO_USE = WALL_REACTIONS
+      ELSE
+         ! No reactions defined
+         RETURN
+      END IF
+      
+      DO JR = 1, N_REAC
+         IF (REACTIONS_TO_USE(JR)%R_SP_ID == JS) THEN
+            IF ( rf() .LE. REACTIONS_TO_USE(JR)%PROB/PROB_SCALE ) THEN
                
-               IF (WALL_REACTIONS(JR)%N_PROD == 0) THEN
+               IF (REACTIONS_TO_USE(JR)%N_PROD == 0) THEN
                   REMOVE = .TRUE.
                   part_adv(IP)%DTRIM = 0.
-               ELSE IF (WALL_REACTIONS(JR)%N_PROD == 1) THEN
-                  JP = WALL_REACTIONS(JR)%P1_SP_ID
+               ELSE IF (REACTIONS_TO_USE(JR)%N_PROD == 1) THEN
+                  JP = REACTIONS_TO_USE(JR)%P1_SP_ID
                   part_adv(IP)%S_ID = JP
                   VEL_SCALE = SQRT(SPECIES(JS)%MOLECULAR_MASS/SPECIES(JP)%MOLECULAR_MASS)
                   part_adv(IP)%VX = part_adv(IP)%VX*VEL_SCALE
@@ -4351,14 +4380,16 @@ MODULE fields
                ELSE
                   CALL ERROR_ABORT('Number of products in wall reaction not supported.')
                END IF
+               IF (ALLOCATED(REACTIONS_TO_USE)) DEALLOCATE(REACTIONS_TO_USE)
                RETURN
             ELSE
-               PROB_SCALE = PROB_SCALE - WALL_REACTIONS(JR)%PROB
+               PROB_SCALE = PROB_SCALE - REACTIONS_TO_USE(JR)%PROB
             END IF
 
          END IF
       END DO
 
+      IF (ALLOCATED(REACTIONS_TO_USE)) DEALLOCATE(REACTIONS_TO_USE)
 
    END SUBROUTINE WALL_REACT
 
@@ -6398,7 +6429,7 @@ MODULE fields
                         ! Apply particle boundary condition
                         IF (GRID_BC(FACE_PG)%PARTICLE_BC == SPECULAR) THEN
                            IF (GRID_BC(FACE_PG)%REACT) THEN
-                              CALL WALL_REACT(part_adv, IP, REMOVE_PART(IP))
+                              CALL WALL_REACT(part_adv, IP, REMOVE_PART(IP), FACE_PG)
                            END IF
                            
                            VDOTN = part_adv(IP)%VX*FACE_NORMAL(1) &
@@ -6409,7 +6440,7 @@ MODULE fields
                            part_adv(IP)%VZ = part_adv(IP)%VZ - 2.*VDOTN*FACE_NORMAL(3)
                         ELSE IF (GRID_BC(FACE_PG)%PARTICLE_BC == DIFFUSE) THEN
                            IF (GRID_BC(FACE_PG)%REACT) THEN
-                              CALL WALL_REACT(part_adv, IP, REMOVE_PART(IP))
+                              CALL WALL_REACT(part_adv, IP, REMOVE_PART(IP), FACE_PG)
                            END IF
 
                            S_ID = part_adv(IP)%S_ID
@@ -6439,7 +6470,7 @@ MODULE fields
 
                         ELSE IF (GRID_BC(FACE_PG)%PARTICLE_BC == CLL) THEN
                            IF (GRID_BC(FACE_PG)%REACT) THEN
-                              CALL WALL_REACT(part_adv, IP, REMOVE_PART(IP))
+                              CALL WALL_REACT(part_adv, IP, REMOVE_PART(IP), FACE_PG)
                            END IF
 
                            VDOTN = part_adv(IP)%VX*FACE_NORMAL(1) &

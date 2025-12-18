@@ -1087,6 +1087,11 @@ MODULE initialization
          READ(STRARRAY(5), '(ES14.0)') GRID_BC(IPG)%ACC_T
       ELSE IF (STRARRAY(2) == 'react') THEN
          GRID_BC(IPG)%REACT = .TRUE.
+         ! Check if a boundary-specific wall reactions file is provided
+         IF (N_STR >= 3) THEN
+            ! Boundary-specific wall reactions file
+            CALL READ_WALL_REACTIONS_FOR_BOUNDARY(STRARRAY(3), IPG)
+         END IF
       ELSE IF (STRARRAY(2) == 'washboard') THEN
          GRID_BC(IPG)%PARTICLE_BC = WB_BC
          READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%A
@@ -1966,6 +1971,110 @@ MODULE initialization
       ! END DO
 
    END SUBROUTINE READ_WALL_REACTIONS
+
+
+   SUBROUTINE READ_WALL_REACTIONS_FOR_BOUNDARY(FILENAME, IPG)
+
+      IMPLICIT NONE
+
+      CHARACTER*64, INTENT(IN) :: FILENAME
+      INTEGER, INTENT(IN) :: IPG
+      
+      INTEGER, PARAMETER :: in4 = 5657
+      INTEGER            :: ios
+      CHARACTER*512      :: line
+      INTEGER            :: ReasonEOF
+
+      CHARACTER(LEN=80)   :: DEFINITION
+      INTEGER :: N_STR, I
+      CHARACTER(LEN=80), ALLOCATABLE :: STRARRAY(:)
+      TYPE(WALL_REACTIONS_DATA_STRUCTURE) :: NEW_REACTION
+      TYPE(WALL_REACTIONS_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: TEMP_REACTIONS
+      
+      IF (PROC_ID == 0) THEN
+         WRITE(*,*) '  Reading boundary-specific wall reactions for ', TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME), &
+                    ' from file: ', TRIM(FILENAME)
+      END IF
+      
+      ! Open input file for reading
+      OPEN(UNIT=in4,FILE=FILENAME, STATUS='old',IOSTAT=ios)
+
+      IF (ios.NE.0) THEN
+         WRITE(*,*) 'ERROR: Could not open wall reactions file: ', TRIM(FILENAME)
+         CALL ERROR_ABORT('Attention, boundary-specific wall reactions definition file not found! ABORTING.')
+      ENDIF
+
+      line = '' ! Init empty
+
+      ! +++++++ Read until the end of file ++++++++
+      DO
+
+         READ(in4,'(A)', IOSTAT=ReasonEOF) DEFINITION ! Read reaction components line         
+         CALL STRIP_COMMENTS(DEFINITION, '!')         ! Remove comments from line
+
+         IF (ReasonEOF < 0) EXIT ! End of file reached
+
+         ! ~~~~~~~~~~~~~  Geometry and computational domain  ~~~~~~~~~~~~~~~~~
+         
+         CALL SPLIT_STR(DEFINITION, ' ', STRARRAY, N_STR)
+
+         IF (N_STR == 0) CYCLE ! This is an empty line
+         IF (STRARRAY(2) .NE. '-->' ) THEN
+            CALL ERROR_ABORT('Attention, format is not respected in wall reactions file.')
+         END IF
+
+         NEW_REACTION%R_SP_ID = SPECIES_NAME_TO_ID(STRARRAY(1))
+         IF (STRARRAY(3) .EQ. 'none' ) THEN
+            NEW_REACTION%N_PROD = 0
+            IF (N_STR .NE. 3) THEN
+               CALL ERROR_ABORT('Attention, format is not respected in wall reactions file.')
+            END IF
+         ELSE
+            NEW_REACTION%N_PROD = (N_STR-1)/2
+            DO I = 1, NEW_REACTION%N_PROD
+               IF (I == 1) THEN
+                  NEW_REACTION%P1_SP_ID = SPECIES_NAME_TO_ID( STRARRAY(3) )
+               ELSE IF (I == 2) THEN
+                  NEW_REACTION%P2_SP_ID = SPECIES_NAME_TO_ID(STRARRAY(5))
+                  IF (STRARRAY(4) .NE. '+' ) THEN
+                     CALL ERROR_ABORT('Attention, format is not respected in wall reactions file.')
+                  END IF
+               ELSE
+                  ! Only acceps up to two products.
+                  CALL ERROR_ABORT('Attention, format is not respected in wall reactions file.')
+               END IF
+            END DO
+         END IF
+      
+         READ(in4,'(A)', IOSTAT=ReasonEOF) DEFINITION ! Read reaction parameters line
+         CALL SPLIT_STR(DEFINITION, ' ', STRARRAY, N_STR)
+         READ(STRARRAY(1), '(ES14.0)') NEW_REACTION%PROB
+
+         IF (ReasonEOF < 0) EXIT ! End of file reached
+         
+         ! Store reactions in boundary-specific array
+         IF (ALLOCATED(GRID_BC(IPG)%WALL_REACTIONS)) THEN
+            ALLOCATE(TEMP_REACTIONS(GRID_BC(IPG)%N_WALL_REACTIONS+1))
+            TEMP_REACTIONS(1:GRID_BC(IPG)%N_WALL_REACTIONS) = GRID_BC(IPG)%WALL_REACTIONS(1:GRID_BC(IPG)%N_WALL_REACTIONS)
+            CALL MOVE_ALLOC(TEMP_REACTIONS, GRID_BC(IPG)%WALL_REACTIONS)
+         ELSE
+            ALLOCATE(GRID_BC(IPG)%WALL_REACTIONS(1))
+         END IF
+         GRID_BC(IPG)%N_WALL_REACTIONS = GRID_BC(IPG)%N_WALL_REACTIONS + 1
+         GRID_BC(IPG)%WALL_REACTIONS(GRID_BC(IPG)%N_WALL_REACTIONS) = NEW_REACTION
+
+         DEALLOCATE(STRARRAY)
+
+      END DO
+      
+      CLOSE(in4) ! Close input file
+
+      IF (PROC_ID == 0) THEN
+         WRITE(*,*) '    Loaded ', GRID_BC(IPG)%N_WALL_REACTIONS, ' wall reactions for boundary ', &
+                    TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME)
+      END IF
+
+   END SUBROUTINE READ_WALL_REACTIONS_FOR_BOUNDARY
 
 
    SUBROUTINE READ_GRID_FILE(FILENAME)

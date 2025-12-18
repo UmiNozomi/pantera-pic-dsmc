@@ -1,0 +1,221 @@
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!                 Input file for PANTERA                                !!!!
+!!!!                                                                       !!!!
+!!!! The program reads is line by line, and when it finds a known line, it !!!!
+!!!! reads and saves the value in the next one.                            !!!!
+!!!! All other lines are ignored (you can comment etc).                    !!!!
+!!!! You can put trailing comments on lines, starting with "!" symbol:     !!!!
+!!!! the program will remove them before checking the content of a line.   !!!!
+!!!!                                                                       !!!!
+!!!! All units are SI [m, kg, s, ...]                                      !!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+!Restart:
+!    100
+
+Log_level: 5    ! 范围 0–5，数字越大越详细
+! ========= Computational domain and grid ===========
+Dimensions:
+    2
+Axisymmetric:
+    .TRUE.
+Number_of_cells:
+    1    1    1
+Domain_limits:
+    0.0    0.18    0.0    0.09    0.0    6.283185307179586
+Domain_periodicity:
+    .FALSE.   .FALSE.   .FALSE.
+Domain_specular:
+    .TRUE.    .FALSE.    .TRUE.    .FALSE.
+Domain_diffuse:
+    .FALSE.    .FALSE.    .FALSE.   .FALSE.
+Boundary_temperature:
+    300.0
+PIC_type:
+   explicit
+Jacobian_type:
+     3
+Mesh_file_SU2:
+    'iech'
+Bool_dump_moments:
+    .FALSE.
+Bool_dump_fluxes:
+    .FALSE.
+    
+
+Flowfield_output:
+    './results/'
+Particle_dump_output:
+    './results/'
+Fluxes_dump_output:
+    './results/'
+All_output_path:
+    './results/'
+
+! ========= Numerical parameters ====================
+
+Fnum:
+    1e5
+Timestep:
+    1.0e-11
+Number_of_timesteps:
+    5000
+Stats_every:
+    100
+RNG_seed:
+    512875
+
+Binary_output:
+    .TRUE.
+Dump_grid_start:
+    0
+Dump_grid_avgevery:
+    20
+Dump_grid_numavgs:
+    50
+Dump_part_start:
+    10000000
+Dump_part_every:
+   200
+Dump_part_fracsample:
+   0.05
+Dump_bound_start:
+   3000000
+
+Perform_checks:
+    .TRUE.
+Checks_every:
+    100
+
+
+! ========= Multispecies ==============================
+
+Species_file:
+    H2.species
+Def_mixture:
+    H2gas H2 1.0
+Def_mixture:
+    Electrons e- 1.0
+Def_mixture:
+    Plasma H2+ 0.5 e- 0.5
+Def_mixture:
+    Ions H2+ 1.0 
+! ========= Collisions ==============================
+
+Collision_type: ! [MCC / DSMC / BGK / NONE]
+ VAHEDI_MCC
+
+! DSMC VHS collisions
+
+MCC_background_dens:
+    2.5E20
+MCC_background_Ttra:
+    300
+MCC_background_mixture:
+   H2gas
+Thermal_bath_bool:
+    .FALSE.
+Thermal_bath_Ttr:
+    10000.0
+
+
+! ========= Reactions ==============================
+Reactions_file:
+    H2.react
+
+Wall_reactions_file:
+    H2.wall
+
+! ========= Secondary Electron Emission (SEE) =======
+SEE_enabled:
+     .TRUE.
+SEE_materials_file:
+    see_materials.dat
+SEE_boundary_mapping:
+    anode -1 1 T
+SEE_boundary_mapping:
+    cathode -1 1 T
+SEE_boundary_mapping:
+    wall -1 6 T
+! ========= Initial particle seed ===================
+!Boundary_emit:
+    !cathode  Electrons   1.0e15   1.0    1.0    1.0    11600.0    0.0    0.0    0.    0.
+Initial_particles:
+     Electrons   1.0e12   1.0    1.0    1.0    11600.0    0.0    0.0    0.    0.
+!Initial_particles:
+    !Ions   1.0e11   1.0    1.0    1.0    300.0    0.0    0.0    0.    0.
+Remove_particles_in_mixture:
+    H2gas
+
+Boundary_condition:
+    axis    neumann 0.0
+
+! ========= 阳极边界条件 - 增加电流监测 =============
+Boundary_condition:
+    anode    dirichlet   0.00
+Boundary_condition:
+    anode    diffuse 1160.00
+Boundary_condition:
+    anode     react  anode.wall
+
+! ========= 壁面边界条件 - 增加电流监测 =============
+Boundary_condition:
+    wall     dielectric
+Boundary_condition:
+    wall    diffuse 300.00
+Boundary_condition:
+    wall     react  wall.wall
+! ========= 阴极边界条件 - 定电流控制 =============
+Boundary_condition:
+    cathode    diffuse 1160.00
+Boundary_condition:
+    cathode constant_current 0.010 -5000.0 100.0 1e7 0 1000 -100000 -150
+Boundary_condition:
+    cathode    react  cathode.wall
+    
+! ========= MPI parallelization =====================
+! == Style for MPI domain partition can be:
+! ==
+! == 0: longitudinal strips (along x)
+! == 1: blocks (equally sized)
+!
+! For "blocks" style, provide "Domain_partition_num_blocks", giving
+! the number of blocks along x and y.
+! We expect the number of processes to be N_BLOCKS_X*N_BLOCKS_Y
+
+Partition_style:
+    'stripsx'
+
+Load_balance:
+    .FALSE.
+
+! ========= 电流监测说明 ==============================
+! 
+! 新增功能：完整的电流监测和二次电子发射检测
+!
+! 1. current_monitor 边界条件：
+!    - 语法: boundary_name current_monitor [averaging_time]
+!    - 功能: 只监测电流，不控制电压
+!    - averaging_time: 电流平均时间常数 [s]，可选，默认10.0e-9
+!
+! 2. 完整电流检测：
+!    - 阴极: constant_current (控制电流)
+!    - 阳极: current_monitor (监测电流) 
+!    - 壁面: current_monitor (监测电流)
+!
+! 3. 二次电子发射处理：
+!    - 自动检测所有边界的二次电子电流贡献
+!    - 从阴极发射到阳极的二次电子会被阳极监测
+!    - 从壁面发射的二次电子会被相应边界监测
+!
+! 4. 电流守恒验证：
+!    - 输出文件将包含所有边界的电流数据
+!    - current_sum_check = I_cathode + I_anode + I_wall
+!    - 理论上应接近0（电流守恒）
+!
+! 5. 输出数据列：
+!    - cathode_voltage, cathode_current_total, cathode_current_electron, cathode_current_ion
+!    - anode_current_total, anode_current_electron, anode_current_ion  
+!    - wall_current_total, wall_current_electron, wall_current_ion
+!    - current_sum_check (电流守恒验证)
+!
