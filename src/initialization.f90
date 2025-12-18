@@ -328,6 +328,16 @@ MODULE initialization
             REMOVE_MIX = MIXTURE_NAME_TO_ID(REMOVE_MIX_NAME)
          END IF
 
+         IF (line=='Remove_particles_by_energy:') THEN
+            BOOL_REMOVE_LOW_ENERGY = .TRUE.
+            READ(in1,*) N_ENERGY_REMOVAL_RULES
+            IF (N_ENERGY_REMOVAL_RULES .GT. 0) THEN
+               ALLOCATE(ENERGY_REMOVAL_RULES(N_ENERGY_REMOVAL_RULES))
+               CALL PARSE_ENERGY_REMOVAL_RULES(in1, N_ENERGY_REMOVAL_RULES)
+            END IF
+         END IF
+
+
          ! ~~~~~~~~~~~~~  Thermal bath  ~~~~~~~~~~~~~~~~~
          IF (line=='Thermal_bath_bool:')  READ(in1,*) BOOL_THERMAL_BATH
          IF (line=='Thermal_bath_Ttr:')  READ(in1,*) TBATH
@@ -3015,4 +3025,62 @@ MODULE initialization
    END SUBROUTINE DEF_SEE_BOUNDARY_MAPPING
 
 
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! SUBROUTINE PARSE_ENERGY_REMOVAL_RULES -> Parse energy-based removal rules   !!!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   SUBROUTINE PARSE_ENERGY_REMOVAL_RULES(FILE_UNIT, N_RULES)
+
+      IMPLICIT NONE
+
+      INTEGER, INTENT(IN) :: FILE_UNIT, N_RULES
+      INTEGER :: I, J, N_STR, IOS
+      CHARACTER(LEN=512) :: LINE
+      CHARACTER(LEN=80), ALLOCATABLE :: STRARRAY(:)
+      REAL(KIND=8) :: THRESHOLD_EV
+
+      DO I = 1, N_RULES
+         ! Read the next line
+         READ(FILE_UNIT, '(A)', IOSTAT=IOS) LINE
+         IF (IOS .NE. 0) THEN
+            CALL ERROR_ABORT('Error reading energy removal rule from input file.')
+         END IF
+
+         ! Remove comments
+         CALL STRIP_COMMENTS(LINE, '!')
+
+         ! Split the line into tokens
+         CALL SPLIT_STR(LINE, ' ', STRARRAY, N_STR)
+
+         IF (N_STR .LT. 2) THEN
+            CALL ERROR_ABORT('Energy removal rule must have at least one species and one threshold value.')
+         END IF
+
+         ! Last token is the energy threshold
+         READ(STRARRAY(N_STR), *) THRESHOLD_EV
+         ENERGY_REMOVAL_RULES(I)%ENERGY_THRESHOLD_EV = THRESHOLD_EV
+
+         ! All other tokens are species names
+         ENERGY_REMOVAL_RULES(I)%N_SPECIES = N_STR - 1
+         ALLOCATE(ENERGY_REMOVAL_RULES(I)%SPECIES_IDS(ENERGY_REMOVAL_RULES(I)%N_SPECIES))
+
+         DO J = 1, ENERGY_REMOVAL_RULES(I)%N_SPECIES
+            ENERGY_REMOVAL_RULES(I)%SPECIES_IDS(J) = SPECIES_NAME_TO_ID(TRIM(STRARRAY(J)))
+         END DO
+
+         IF (PROC_ID == 0) THEN
+            WRITE(*,'(A,I3,A,F10.3,A)') '  > Energy removal rule ', I, ': threshold = ', &
+                  THRESHOLD_EV, ' eV for species:'
+            DO J = 1, ENERGY_REMOVAL_RULES(I)%N_SPECIES
+               WRITE(*,'(A,A)') '    - ', TRIM(SPECIES(ENERGY_REMOVAL_RULES(I)%SPECIES_IDS(J))%NAME)
+            END DO
+         END IF
+
+         DEALLOCATE(STRARRAY)
+      END DO
+
+   END SUBROUTINE PARSE_ENERGY_REMOVAL_RULES
+
+
 END MODULE initialization
+

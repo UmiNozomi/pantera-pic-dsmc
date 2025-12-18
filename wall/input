@@ -146,6 +146,9 @@ Initial_particles:
     !Ions   1.0e11   1.0    1.0    1.0    300.0    0.0    0.0    0.    0.
 Remove_particles_in_mixture:
     argon
+Remove_particles_by_energy:
+1
+Ar+  0
 
 ! ========= 阳极边界条件 - 增加电流监测 =============
 Boundary_condition:

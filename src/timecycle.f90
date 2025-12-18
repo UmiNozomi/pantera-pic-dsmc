@@ -398,6 +398,9 @@ MODULE timecycle
 
          IF (REMOVE_MIX .NE. -1) CALL REMOVE_PARTICLES_IN_MIXTURE(REMOVE_MIX)
 
+         IF (BOOL_REMOVE_LOW_ENERGY) CALL REMOVE_PARTICLES_BY_ENERGY()
+
+
 
          !IF (PERFORM_CHECKS .AND. MOD(tID, CHECKS_EVERY) .EQ. 0) THEN
          !   CALL ONLYMASTERPRINT1(PROC_ID, '---> Checking if particles are in the correct cells.')
@@ -2382,6 +2385,58 @@ MODULE timecycle
       END DO
 
    END SUBROUTINE REMOVE_PARTICLES_IN_MIXTURE
+
+
+   SUBROUTINE REMOVE_PARTICLES_BY_ENERGY()
+
+      IMPLICIT NONE
+
+      INTEGER :: IP, I, J, S_ID
+      REAL(KIND=8) :: VX, VY, VZ, MASS, KE_JOULES, KE_EV
+      LOGICAL :: SHOULD_REMOVE
+
+      ! Loop through all particles (backwards to safely remove)
+      IP = NP_PROC
+      DO WHILE (IP .GE. 1)
+
+         S_ID = particles(IP)%S_ID
+         VX = particles(IP)%VX
+         VY = particles(IP)%VY
+         VZ = particles(IP)%VZ
+         MASS = SPECIES(S_ID)%MOLECULAR_MASS
+
+         ! Calculate kinetic energy in Joules: KE = 0.5 * m * v^2
+         KE_JOULES = 0.5d0 * MASS * (VX*VX + VY*VY + VZ*VZ)
+
+         ! Convert to eV: 1 eV = 1.602176634e-19 J
+         KE_EV = KE_JOULES / QE
+
+         ! Check if this particle should be removed based on any rule
+         SHOULD_REMOVE = .FALSE.
+         DO I = 1, N_ENERGY_REMOVAL_RULES
+            DO J = 1, ENERGY_REMOVAL_RULES(I)%N_SPECIES
+               IF (ENERGY_REMOVAL_RULES(I)%SPECIES_IDS(J) == S_ID) THEN
+                  ! This species is monitored by this rule
+                  IF (KE_EV .LT. ENERGY_REMOVAL_RULES(I)%ENERGY_THRESHOLD_EV) THEN
+                     SHOULD_REMOVE = .TRUE.
+                     EXIT
+                  END IF
+               END IF
+            END DO
+            IF (SHOULD_REMOVE) EXIT
+         END DO
+
+         ! Remove particle if kinetic energy is below threshold
+         IF (SHOULD_REMOVE) THEN
+            CALL REMOVE_PARTICLE_ARRAY(IP, particles, NP_PROC)
+         END IF
+
+         IP = IP - 1
+
+      END DO
+
+   END SUBROUTINE REMOVE_PARTICLES_BY_ENERGY
+
 
 
 END MODULE timecycle

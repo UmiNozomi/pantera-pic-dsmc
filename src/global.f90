@@ -464,6 +464,19 @@ MODULE global
    REAL(KIND=8) :: S_NORM_XMIN, S_NORM_XMAX, S_NORM_YMIN, S_NORM_YMAX
    INTEGER           :: REMOVE_MIX = -1
 
+   ! Energy-based particle removal
+   LOGICAL           :: BOOL_REMOVE_LOW_ENERGY = .FALSE.
+   INTEGER           :: N_ENERGY_REMOVAL_RULES = 0
+
+   TYPE ENERGY_REMOVAL_RULE
+      INTEGER :: N_SPECIES                              ! Number of species in this rule
+      INTEGER, DIMENSION(:), ALLOCATABLE :: SPECIES_IDS ! Species IDs to check
+      REAL(KIND=8) :: ENERGY_THRESHOLD_EV               ! Threshold in eV
+   END TYPE ENERGY_REMOVAL_RULE
+
+   TYPE(ENERGY_REMOVAL_RULE), DIMENSION(:), ALLOCATABLE :: ENERGY_REMOVAL_RULES
+
+
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    !!!!!!!!! Particles injection from line source !!!!!!!!!!!!!!!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
