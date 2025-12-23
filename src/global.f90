@@ -636,8 +636,13 @@ MODULE global
    
    LOGICAL :: BOOL_SEE_ENABLED = .FALSE.    ! Enable secondary electron emission
    INTEGER :: SEE_ELECTRON_SPECIES_ID = -1  ! Species ID for electrons
-   INTEGER :: SEE_ION_SPECIES_ID = -1       ! Species ID for positive ions
-   INTEGER :: SEE_NEUTRAL_SPECIES_ID = -1   ! Species ID for neutral atoms
+   
+   ! Multi-species support for ion and neutral SEE
+   INTEGER, ALLOCATABLE, DIMENSION(:) :: SEE_ION_SPECIES_IDS      ! All positive ion species IDs
+   INTEGER, ALLOCATABLE, DIMENSION(:) :: SEE_NEUTRAL_SPECIES_IDS  ! All neutral atom species IDs
+   INTEGER :: N_SEE_ION_SPECIES = 0                               ! Number of ion species
+   INTEGER :: N_SEE_NEUTRAL_SPECIES = 0                           ! Number of neutral species
+   
    INTEGER :: N_SEE_MATERIALS = 0           ! Number of SEE materials defined
    
    ! SEE material properties structure

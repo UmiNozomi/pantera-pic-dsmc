@@ -64,36 +64,64 @@ MODULE secondary_electron_emission
          CALL ERROR_ABORT('SEE electron species ID out of valid range!')
       END IF
 
-      ! Find ion species ID (for glow discharge)
-      SEE_ION_SPECIES_ID = -1
+      ! Find all positive ion species (for glow discharge)
+      N_SEE_ION_SPECIES = 0
       DO IM = 1, N_SPECIES
          IF (SPECIES(IM)%CHARGE > 0.5d0) THEN  ! Positive ion
-            SEE_ION_SPECIES_ID = IM
-            EXIT
+            N_SEE_ION_SPECIES = N_SEE_ION_SPECIES + 1
          END IF
       END DO
 
-      IF (SEE_ION_SPECIES_ID == -1) THEN
+      IF (N_SEE_ION_SPECIES > 0) THEN
+         ALLOCATE(SEE_ION_SPECIES_IDS(N_SEE_ION_SPECIES))
+         N_SEE_ION_SPECIES = 0  ! Reset counter for actual assignment
+         DO IM = 1, N_SPECIES
+            IF (SPECIES(IM)%CHARGE > 0.5d0) THEN
+               N_SEE_ION_SPECIES = N_SEE_ION_SPECIES + 1
+               SEE_ION_SPECIES_IDS(N_SEE_ION_SPECIES) = IM
+            END IF
+         END DO
+         
+         IF (PROC_ID == 0) THEN
+            WRITE(*,*) 'Ion SEE enabled for', N_SEE_ION_SPECIES, 'species:'
+            DO IM = 1, N_SEE_ION_SPECIES
+               WRITE(*,'(A,I3,A,A)') '  - Species ID ', SEE_ION_SPECIES_IDS(IM), ': ', &
+                                     TRIM(SPECIES(SEE_ION_SPECIES_IDS(IM))%NAME)
+            END DO
+         END IF
+      ELSE
          WRITE(*,*) 'Warning: No positive ion species found for ion SEE!'
          WRITE(*,*) 'Only electron SEE will be active.'
-      ELSE
-         WRITE(*,*) 'Ion SEE enabled for species ID: ', SEE_ION_SPECIES_ID
       END IF
 
-      ! Find neutral atom species ID
-      SEE_NEUTRAL_SPECIES_ID = -1
+      ! Find all neutral atom species
+      N_SEE_NEUTRAL_SPECIES = 0
       DO IM = 1, N_SPECIES
          IF (ABS(SPECIES(IM)%CHARGE) < 1.d-6) THEN  ! Neutral atom (charge = 0)
-            SEE_NEUTRAL_SPECIES_ID = IM
-            EXIT
+            N_SEE_NEUTRAL_SPECIES = N_SEE_NEUTRAL_SPECIES + 1
          END IF
       END DO
 
-      IF (SEE_NEUTRAL_SPECIES_ID == -1) THEN
+      IF (N_SEE_NEUTRAL_SPECIES > 0) THEN
+         ALLOCATE(SEE_NEUTRAL_SPECIES_IDS(N_SEE_NEUTRAL_SPECIES))
+         N_SEE_NEUTRAL_SPECIES = 0  ! Reset counter for actual assignment
+         DO IM = 1, N_SPECIES
+            IF (ABS(SPECIES(IM)%CHARGE) < 1.d-6) THEN
+               N_SEE_NEUTRAL_SPECIES = N_SEE_NEUTRAL_SPECIES + 1
+               SEE_NEUTRAL_SPECIES_IDS(N_SEE_NEUTRAL_SPECIES) = IM
+            END IF
+         END DO
+         
+         IF (PROC_ID == 0) THEN
+            WRITE(*,*) 'Neutral atom SEE enabled for', N_SEE_NEUTRAL_SPECIES, 'species:'
+            DO IM = 1, N_SEE_NEUTRAL_SPECIES
+               WRITE(*,'(A,I3,A,A)') '  - Species ID ', SEE_NEUTRAL_SPECIES_IDS(IM), ': ', &
+                                     TRIM(SPECIES(SEE_NEUTRAL_SPECIES_IDS(IM))%NAME)
+            END DO
+         END IF
+      ELSE
          WRITE(*,*) 'Warning: No neutral species found for neutral atom SEE!'
          WRITE(*,*) 'Only electron and ion SEE will be active.'
-      ELSE
-         WRITE(*,*) 'Neutral atom SEE enabled for species ID: ', SEE_NEUTRAL_SPECIES_ID
       END IF
 
       ! Allocate statistics arrays
@@ -519,8 +547,8 @@ MODULE secondary_electron_emission
       
       ! Check if this is an electron, ion, or neutral atom
       IF (particles(PARTICLE_INDEX)%S_ID /= SEE_ELECTRON_SPECIES_ID .AND. &
-          particles(PARTICLE_INDEX)%S_ID /= SEE_ION_SPECIES_ID .AND. &
-          particles(PARTICLE_INDEX)%S_ID /= SEE_NEUTRAL_SPECIES_ID) THEN
+          .NOT. IS_SEE_ION(particles(PARTICLE_INDEX)%S_ID) .AND. &
+          .NOT. IS_SEE_NEUTRAL(particles(PARTICLE_INDEX)%S_ID)) THEN
          RETURN
       END IF
       
@@ -545,23 +573,25 @@ MODULE secondary_electron_emission
             SEE_MATERIAL_IMPACTS(MATERIAL_ID) = SEE_MATERIAL_IMPACTS(MATERIAL_ID) + 1
          END IF
          
-      ELSE IF (particles(PARTICLE_INDEX)%S_ID == SEE_ION_SPECIES_ID) THEN
+      ELSE IF (IS_SEE_ION(particles(PARTICLE_INDEX)%S_ID)) THEN
          ! Ion SEE (γ process) - key for glow discharge!
+         ! Works for all positive ions (H2+, H3+, etc.)
          ion_charge = ABS(SPECIES(particles(PARTICLE_INDEX)%S_ID)%CHARGE)
          delta_yield = CALCULATE_ION_SEE_YIELD(MATERIAL_ID, impact_energy_ev, ion_charge, impact_angle_degrees)
          
          ! Update ion statistics
          SEE_TOTAL_ION_IMPACTS = SEE_TOTAL_ION_IMPACTS + 1
          
-      ELSE IF (particles(PARTICLE_INDEX)%S_ID == SEE_NEUTRAL_SPECIES_ID) THEN
+      ELSE IF (IS_SEE_NEUTRAL(particles(PARTICLE_INDEX)%S_ID)) THEN
          ! Neutral atom SEE (pure kinetic emission)
+         ! Works for all neutral species (H2, H, etc.)
          delta_yield = CALCULATE_NEUTRAL_SEE_YIELD(MATERIAL_ID, impact_energy_ev, impact_angle_degrees)
          
          ! Update neutral atom statistics
          SEE_TOTAL_NEUTRAL_IMPACTS = SEE_TOTAL_NEUTRAL_IMPACTS + 1
          
       ELSE
-         ! Other particle types
+         ! Other particle types (should not reach here due to early return)
          delta_yield = 0.d0
       END IF
       
@@ -572,10 +602,10 @@ MODULE secondary_electron_emission
       IF (N_SECONDARY_OUT > 0) THEN
          SEE_TOTAL_EMISSIONS = SEE_TOTAL_EMISSIONS + N_SECONDARY_OUT
          
-         IF (particles(PARTICLE_INDEX)%S_ID == SEE_ION_SPECIES_ID) THEN
+         IF (IS_SEE_ION(particles(PARTICLE_INDEX)%S_ID)) THEN
             ! Ion-induced emissions
             SEE_TOTAL_ION_EMISSIONS = SEE_TOTAL_ION_EMISSIONS + N_SECONDARY_OUT
-         ELSE IF (particles(PARTICLE_INDEX)%S_ID == SEE_NEUTRAL_SPECIES_ID) THEN
+         ELSE IF (IS_SEE_NEUTRAL(particles(PARTICLE_INDEX)%S_ID)) THEN
             ! Neutral atom-induced emissions
             SEE_TOTAL_NEUTRAL_EMISSIONS = SEE_TOTAL_NEUTRAL_EMISSIONS + N_SECONDARY_OUT
          END IF
@@ -875,5 +905,59 @@ MODULE secondary_electron_emission
       END DO
 
    END FUNCTION FIND_SEE_MATERIAL_FOR_BOUNDARY
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! FUNCTION IS_SEE_ION -> Check if species ID is in ion species array    !
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   FUNCTION IS_SEE_ION(SPECIES_ID) RESULT(IS_ION)
+
+      IMPLICIT NONE
+      
+      INTEGER, INTENT(IN) :: SPECIES_ID
+      LOGICAL :: IS_ION
+      INTEGER :: I
+      
+      IS_ION = .FALSE.
+      
+      ! Check if array is allocated
+      IF (.NOT. ALLOCATED(SEE_ION_SPECIES_IDS) .OR. N_SEE_ION_SPECIES <= 0) RETURN
+      
+      ! Search for species ID in array
+      DO I = 1, N_SEE_ION_SPECIES
+         IF (SPECIES_ID == SEE_ION_SPECIES_IDS(I)) THEN
+            IS_ION = .TRUE.
+            RETURN
+         END IF
+      END DO
+
+   END FUNCTION IS_SEE_ION
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! FUNCTION IS_SEE_NEUTRAL -> Check if species ID is in neutral array    !
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   FUNCTION IS_SEE_NEUTRAL(SPECIES_ID) RESULT(IS_NEUTRAL)
+
+      IMPLICIT NONE
+      
+      INTEGER, INTENT(IN) :: SPECIES_ID
+      LOGICAL :: IS_NEUTRAL
+      INTEGER :: I
+      
+      IS_NEUTRAL = .FALSE.
+      
+      ! Check if array is allocated
+      IF (.NOT. ALLOCATED(SEE_NEUTRAL_SPECIES_IDS) .OR. N_SEE_NEUTRAL_SPECIES <= 0) RETURN
+      
+      ! Search for species ID in array
+      DO I = 1, N_SEE_NEUTRAL_SPECIES
+         IF (SPECIES_ID == SEE_NEUTRAL_SPECIES_IDS(I)) THEN
+            IS_NEUTRAL = .TRUE.
+            RETURN
+         END IF
+      END DO
+
+   END FUNCTION IS_SEE_NEUTRAL
 
 END MODULE secondary_electron_emission 
