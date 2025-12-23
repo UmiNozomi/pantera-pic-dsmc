@@ -80,6 +80,22 @@ MODULE secondary_electron_emission
          WRITE(*,*) 'Ion SEE enabled for species ID: ', SEE_ION_SPECIES_ID
       END IF
 
+      ! Find neutral atom species ID
+      SEE_NEUTRAL_SPECIES_ID = -1
+      DO IM = 1, N_SPECIES
+         IF (ABS(SPECIES(IM)%CHARGE) < 1.d-6) THEN  ! Neutral atom (charge = 0)
+            SEE_NEUTRAL_SPECIES_ID = IM
+            EXIT
+         END IF
+      END DO
+
+      IF (SEE_NEUTRAL_SPECIES_ID == -1) THEN
+         WRITE(*,*) 'Warning: No neutral species found for neutral atom SEE!'
+         WRITE(*,*) 'Only electron and ion SEE will be active.'
+      ELSE
+         WRITE(*,*) 'Neutral atom SEE enabled for species ID: ', SEE_NEUTRAL_SPECIES_ID
+      END IF
+
       ! Allocate statistics arrays
       IF (N_SEE_MATERIALS > 0) THEN
          ALLOCATE(SEE_MATERIAL_IMPACTS(N_SEE_MATERIALS))
@@ -92,6 +108,12 @@ MODULE secondary_electron_emission
       SEE_TOTAL_IMPACTS = 0
       SEE_TOTAL_EMISSIONS = 0
       SEE_TOTAL_YIELD = 0.d0
+      SEE_TOTAL_ION_IMPACTS = 0
+      SEE_TOTAL_ION_EMISSIONS = 0
+      SEE_TOTAL_ION_YIELD = 0.d0
+      SEE_TOTAL_NEUTRAL_IMPACTS = 0
+      SEE_TOTAL_NEUTRAL_EMISSIONS = 0
+      SEE_TOTAL_NEUTRAL_YIELD = 0.d0
 
       IF (PROC_ID == 0) THEN
          WRITE(*,*) '> SEE initialized with ', N_SEE_MATERIALS, ' materials'
@@ -115,6 +137,7 @@ MODULE secondary_electron_emission
       CHARACTER(LEN=64) :: name
       REAL(KIND=8) :: delta_max, e_max, e_th, s_param, w_func
       REAL(KIND=8) :: gamma_max, ion_e_th, ion_alpha, ion_beta, ion_charge_factor
+      REAL(KIND=8) :: neutral_gamma_max, neutral_e_th, neutral_alpha, neutral_beta
       REAL(KIND=8) :: p1, p2, e1, e2, sigma
       TYPE(SEE_MATERIAL_PROPERTIES), DIMENSION(:), ALLOCATABLE :: TEMP_MATERIALS
 
@@ -135,13 +158,14 @@ MODULE secondary_electron_emission
          line = ADJUSTL(line)
          IF (line(1:1) == '#' .OR. LEN_TRIM(line) == 0) CYCLE  ! Skip comments and empty lines
          
-         ! Parse material definition (extended format with ion SEE parameters)
+         ! Parse material definition (extended format with neutral atom SEE parameters)
          READ(line, *, iostat=ios) name, delta_max, e_max, e_th, s_param, &
                                    gamma_max, ion_e_th, ion_alpha, ion_beta, ion_charge_factor, &
-                                   w_func, p1, p2, e1, e2, sigma
+                                   w_func, p1, p2, e1, e2, sigma, &
+                                   neutral_gamma_max, neutral_e_th, neutral_alpha, neutral_beta
          IF (ios /= 0) THEN
             WRITE(*,*) 'Error parsing SEE material line: ', TRIM(line)
-            WRITE(*,*) 'Expected 16 parameters, got error code: ', ios
+            WRITE(*,*) 'Expected 20 parameters, got error code: ', ios
             CYCLE
          END IF
 
@@ -168,6 +192,11 @@ MODULE secondary_electron_emission
          SEE_MATERIALS(N_SEE_MATERIALS)%ION_ALPHA = ion_alpha
          SEE_MATERIALS(N_SEE_MATERIALS)%ION_BETA = ion_beta
          SEE_MATERIALS(N_SEE_MATERIALS)%ION_CHARGE_FACTOR = ion_charge_factor
+         ! Neutral atom SEE parameters
+         SEE_MATERIALS(N_SEE_MATERIALS)%NEUTRAL_GAMMA_MAX = neutral_gamma_max
+         SEE_MATERIALS(N_SEE_MATERIALS)%NEUTRAL_E_THRESHOLD = neutral_e_th
+         SEE_MATERIALS(N_SEE_MATERIALS)%NEUTRAL_ALPHA = neutral_alpha
+         SEE_MATERIALS(N_SEE_MATERIALS)%NEUTRAL_BETA = neutral_beta
          ! Common parameters
          SEE_MATERIALS(N_SEE_MATERIALS)%W_WORK_FUNCTION = w_func
          SEE_MATERIALS(N_SEE_MATERIALS)%P1 = p1
@@ -324,6 +353,65 @@ MODULE secondary_electron_emission
    END FUNCTION CALCULATE_ION_SEE_YIELD
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! FUNCTION CALCULATE_NEUTRAL_SEE_YIELD -> Calculate neutral atom SEE yield!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   FUNCTION CALCULATE_NEUTRAL_SEE_YIELD(MATERIAL_ID, NEUTRAL_ENERGY_EV, NEUTRAL_ANGLE_DEGREES) RESULT(GAMMA)
+      
+      IMPLICIT NONE
+      
+      INTEGER, INTENT(IN) :: MATERIAL_ID
+      REAL(KIND=8), INTENT(IN) :: NEUTRAL_ENERGY_EV, NEUTRAL_ANGLE_DEGREES
+      REAL(KIND=8) :: GAMMA
+      
+      REAL(KIND=8) :: gamma_max, e_threshold, alpha, beta
+      REAL(KIND=8) :: energy_ratio, angle_factor, cos_angle
+      
+      ! Validate inputs
+      IF (MATERIAL_ID < 1 .OR. MATERIAL_ID > N_SEE_MATERIALS) THEN
+         GAMMA = 0.d0
+         RETURN
+      END IF
+      
+      ! Check if SEE_MATERIALS array is allocated
+      IF (.NOT. ALLOCATED(SEE_MATERIALS)) THEN
+         GAMMA = 0.d0
+         RETURN
+      END IF
+      
+      IF (NEUTRAL_ENERGY_EV <= 0.d0) THEN
+         GAMMA = 0.d0
+         RETURN
+      END IF
+      
+      ! Get material parameters for neutral atoms
+      gamma_max = SEE_MATERIALS(MATERIAL_ID)%NEUTRAL_GAMMA_MAX
+      e_threshold = SEE_MATERIALS(MATERIAL_ID)%NEUTRAL_E_THRESHOLD
+      alpha = SEE_MATERIALS(MATERIAL_ID)%NEUTRAL_ALPHA
+      beta = SEE_MATERIALS(MATERIAL_ID)%NEUTRAL_BETA
+      
+      ! Energy threshold check
+      IF (NEUTRAL_ENERGY_EV < e_threshold) THEN
+         GAMMA = 0.d0
+         RETURN
+      END IF
+      
+      ! Neutral atom SEE yield calculation (pure kinetic emission)
+      ! No charge state correction - this is the key difference from ions
+      energy_ratio = NEUTRAL_ENERGY_EV / e_threshold
+      GAMMA = gamma_max * (energy_ratio**alpha) * EXP(-beta/SQRT(NEUTRAL_ENERGY_EV))
+      
+      ! Angle correction (weaker than electron, similar to ion)
+      cos_angle = COS(NEUTRAL_ANGLE_DEGREES * PI / 180.d0)
+      angle_factor = 1.d0 + 0.05d0 * (1.d0 - cos_angle)  ! Even weaker angle dependence
+      GAMMA = GAMMA * angle_factor
+      
+      ! Physical limits (neutral yields should be much lower than ions)
+      GAMMA = MAX(0.d0, MIN(GAMMA, 1.0d0))  ! Cap at 1.0 for neutrals
+      
+   END FUNCTION CALCULATE_NEUTRAL_SEE_YIELD
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! SUBROUTINE GENERATE_SINGLE_SECONDARY_ELECTRON -> Generate one secondary electron!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -429,9 +517,10 @@ MODULE secondary_electron_emission
          RETURN
       END IF
       
-      ! Check if this is an electron or ion
+      ! Check if this is an electron, ion, or neutral atom
       IF (particles(PARTICLE_INDEX)%S_ID /= SEE_ELECTRON_SPECIES_ID .AND. &
-          particles(PARTICLE_INDEX)%S_ID /= SEE_ION_SPECIES_ID) THEN
+          particles(PARTICLE_INDEX)%S_ID /= SEE_ION_SPECIES_ID .AND. &
+          particles(PARTICLE_INDEX)%S_ID /= SEE_NEUTRAL_SPECIES_ID) THEN
          RETURN
       END IF
       
@@ -464,6 +553,13 @@ MODULE secondary_electron_emission
          ! Update ion statistics
          SEE_TOTAL_ION_IMPACTS = SEE_TOTAL_ION_IMPACTS + 1
          
+      ELSE IF (particles(PARTICLE_INDEX)%S_ID == SEE_NEUTRAL_SPECIES_ID) THEN
+         ! Neutral atom SEE (pure kinetic emission)
+         delta_yield = CALCULATE_NEUTRAL_SEE_YIELD(MATERIAL_ID, impact_energy_ev, impact_angle_degrees)
+         
+         ! Update neutral atom statistics
+         SEE_TOTAL_NEUTRAL_IMPACTS = SEE_TOTAL_NEUTRAL_IMPACTS + 1
+         
       ELSE
          ! Other particle types
          delta_yield = 0.d0
@@ -479,6 +575,9 @@ MODULE secondary_electron_emission
          IF (particles(PARTICLE_INDEX)%S_ID == SEE_ION_SPECIES_ID) THEN
             ! Ion-induced emissions
             SEE_TOTAL_ION_EMISSIONS = SEE_TOTAL_ION_EMISSIONS + N_SECONDARY_OUT
+         ELSE IF (particles(PARTICLE_INDEX)%S_ID == SEE_NEUTRAL_SPECIES_ID) THEN
+            ! Neutral atom-induced emissions
+            SEE_TOTAL_NEUTRAL_EMISSIONS = SEE_TOTAL_NEUTRAL_EMISSIONS + N_SECONDARY_OUT
          END IF
          
          IF (MATERIAL_ID >= 1 .AND. MATERIAL_ID <= N_SEE_MATERIALS .AND. ALLOCATED(SEE_MATERIAL_EMISSIONS)) THEN
@@ -563,7 +662,7 @@ MODULE secondary_electron_emission
       INTEGER, INTENT(IN) :: TIMESTEP
       INTEGER :: IM, out_unit = 30
       CHARACTER(LEN=512) :: filename
-      REAL(KIND=8) :: global_yield, electron_yield, ion_yield
+      REAL(KIND=8) :: global_yield, electron_yield, ion_yield, neutral_yield
       
       IF (.NOT. BOOL_SEE_ENABLED .OR. PROC_ID /= 0) RETURN
       
@@ -583,8 +682,10 @@ MODULE secondary_electron_emission
          WRITE(out_unit, '(A,I12)') '# Timestep: ', TIMESTEP
          WRITE(out_unit, '(A,I12)') '# Total electron impacts: ', SEE_TOTAL_IMPACTS
          WRITE(out_unit, '(A,I12)') '# Total ion impacts: ', SEE_TOTAL_ION_IMPACTS
+         WRITE(out_unit, '(A,I12)') '# Total neutral atom impacts: ', SEE_TOTAL_NEUTRAL_IMPACTS
          WRITE(out_unit, '(A,I12)') '# Total emissions: ', SEE_TOTAL_EMISSIONS
          WRITE(out_unit, '(A,I12)') '# Ion-induced emissions: ', SEE_TOTAL_ION_EMISSIONS
+         WRITE(out_unit, '(A,I12)') '# Neutral-induced emissions: ', SEE_TOTAL_NEUTRAL_EMISSIONS
          
          ! Calculate separate yields
          IF (SEE_TOTAL_IMPACTS > 0) THEN
@@ -596,6 +697,12 @@ MODULE secondary_electron_emission
             ion_yield = REAL(SEE_TOTAL_ION_EMISSIONS, KIND=8) / REAL(SEE_TOTAL_ION_IMPACTS, KIND=8)
             WRITE(out_unit, '(A,F8.4)') '# Ion SEE yield (γ): ', ion_yield
             SEE_TOTAL_ION_YIELD = ion_yield
+         END IF
+         
+         IF (SEE_TOTAL_NEUTRAL_IMPACTS > 0) THEN
+            neutral_yield = REAL(SEE_TOTAL_NEUTRAL_EMISSIONS, KIND=8) / REAL(SEE_TOTAL_NEUTRAL_IMPACTS, KIND=8)
+            WRITE(out_unit, '(A,F8.4)') '# Neutral atom SEE yield: ', neutral_yield
+            SEE_TOTAL_NEUTRAL_YIELD = neutral_yield
          END IF
          
          WRITE(out_unit, '(A,F8.4)') '# Global yield: ', global_yield
@@ -629,7 +736,7 @@ MODULE secondary_electron_emission
       IMPLICIT NONE
       
       INTEGER, INTENT(IN) :: TIMESTEP
-      REAL(KIND=8) :: gamma_coefficient, electron_yield
+      REAL(KIND=8) :: gamma_coefficient, electron_yield, neutral_yield
       
       IF (.NOT. BOOL_SEE_ENABLED .OR. PROC_ID /= 0) RETURN
       
@@ -642,9 +749,17 @@ MODULE secondary_electron_emission
       
       ! Calculate electron SEE yield
       IF (SEE_TOTAL_IMPACTS > 0) THEN
-         electron_yield = REAL(SEE_TOTAL_EMISSIONS - SEE_TOTAL_ION_EMISSIONS, KIND=8) / REAL(SEE_TOTAL_IMPACTS, KIND=8)
+         electron_yield = REAL(SEE_TOTAL_EMISSIONS - SEE_TOTAL_ION_EMISSIONS - &
+                               SEE_TOTAL_NEUTRAL_EMISSIONS, KIND=8) / REAL(SEE_TOTAL_IMPACTS, KIND=8)
       ELSE
          electron_yield = 0.d0
+      END IF
+      
+      ! Calculate neutral atom SEE yield
+      IF (SEE_TOTAL_NEUTRAL_IMPACTS > 0) THEN
+         neutral_yield = REAL(SEE_TOTAL_NEUTRAL_EMISSIONS, KIND=8) / REAL(SEE_TOTAL_NEUTRAL_IMPACTS, KIND=8)
+      ELSE
+         neutral_yield = 0.d0
       END IF
       
       ! Output diagnostic information
@@ -652,10 +767,14 @@ MODULE secondary_electron_emission
          WRITE(*,*) '=== Glow Discharge SEE Diagnostics (Step ', TIMESTEP, ') ==='
          WRITE(*,*) '  γ coefficient (ion SEE): ', gamma_coefficient
          WRITE(*,*) '  δ coefficient (electron SEE): ', electron_yield
+         WRITE(*,*) '  Neutral atom SEE yield: ', neutral_yield
          WRITE(*,*) '  Total ion impacts: ', SEE_TOTAL_ION_IMPACTS
          WRITE(*,*) '  Total ion emissions: ', SEE_TOTAL_ION_EMISSIONS
          WRITE(*,*) '  Total electron impacts: ', SEE_TOTAL_IMPACTS
-         WRITE(*,*) '  Total electron emissions: ', SEE_TOTAL_EMISSIONS - SEE_TOTAL_ION_EMISSIONS
+         WRITE(*,*) '  Total electron emissions: ', &
+                    SEE_TOTAL_EMISSIONS - SEE_TOTAL_ION_EMISSIONS - SEE_TOTAL_NEUTRAL_EMISSIONS
+         WRITE(*,*) '  Total neutral atom impacts: ', SEE_TOTAL_NEUTRAL_IMPACTS
+         WRITE(*,*) '  Total neutral emissions: ', SEE_TOTAL_NEUTRAL_EMISSIONS
          
          ! Check discharge maintenance condition
          IF (gamma_coefficient > 0.1d0) THEN

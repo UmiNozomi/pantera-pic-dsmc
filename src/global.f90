@@ -637,6 +637,7 @@ MODULE global
    LOGICAL :: BOOL_SEE_ENABLED = .FALSE.    ! Enable secondary electron emission
    INTEGER :: SEE_ELECTRON_SPECIES_ID = -1  ! Species ID for electrons
    INTEGER :: SEE_ION_SPECIES_ID = -1       ! Species ID for positive ions
+   INTEGER :: SEE_NEUTRAL_SPECIES_ID = -1   ! Species ID for neutral atoms
    INTEGER :: N_SEE_MATERIALS = 0           ! Number of SEE materials defined
    
    ! SEE material properties structure
@@ -653,6 +654,11 @@ MODULE global
       REAL(KIND=8) :: ION_ALPHA         ! Ion energy exponent
       REAL(KIND=8) :: ION_BETA          ! Ion decay parameter
       REAL(KIND=8) :: ION_CHARGE_FACTOR ! Ion charge state correction
+      ! Neutral atom SEE parameters (pure kinetic emission)
+      REAL(KIND=8) :: NEUTRAL_GAMMA_MAX       ! Maximum neutral SEE yield
+      REAL(KIND=8) :: NEUTRAL_E_THRESHOLD     ! Neutral threshold energy [eV]
+      REAL(KIND=8) :: NEUTRAL_ALPHA           ! Neutral energy exponent
+      REAL(KIND=8) :: NEUTRAL_BETA            ! Neutral decay parameter
       ! Common parameters
       REAL(KIND=8) :: W_WORK_FUNCTION   ! Work function [eV]
       REAL(KIND=8) :: P1                ! Backscatter parameter 1
@@ -682,8 +688,11 @@ MODULE global
    INTEGER(KIND=8) :: SEE_TOTAL_EMISSIONS = 0      ! Total secondary emissions
    INTEGER(KIND=8) :: SEE_TOTAL_ION_IMPACTS = 0    ! Total ion impacts
    INTEGER(KIND=8) :: SEE_TOTAL_ION_EMISSIONS = 0  ! Total ion-induced emissions
+   INTEGER(KIND=8) :: SEE_TOTAL_NEUTRAL_IMPACTS = 0    ! Total neutral atom impacts
+   INTEGER(KIND=8) :: SEE_TOTAL_NEUTRAL_EMISSIONS = 0  ! Total neutral-induced emissions
    REAL(KIND=8) :: SEE_TOTAL_YIELD = 0.d0          ! Average electron yield
    REAL(KIND=8) :: SEE_TOTAL_ION_YIELD = 0.d0      ! Average ion yield (γ coefficient)
+   REAL(KIND=8) :: SEE_TOTAL_NEUTRAL_YIELD = 0.d0  ! Average neutral yield
    INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: SEE_MATERIAL_IMPACTS    ! Per-material impacts
    INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: SEE_MATERIAL_EMISSIONS  ! Per-material emissions
 
