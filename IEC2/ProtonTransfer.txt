@@ -1,0 +1,33 @@
+LXCat, www.lxcat.net
+Generated for IEC Research.
+Proton Transfer reaction for H2+ in H2 background.
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+********************************************************** H2 **********************************************************
+
+EFFECTIVE
+H2
+ 1.000000e-2
+SPECIES: H2+ / H2
+PROCESS: H2+ + H2 -> H3+ + H
+PARAM.:  Exothermic, No Threshold
+COMMENT: Dominant H2+ loss mechanism in low temp plasma.
+COMMENT: Converts primary H2+ ions into H3+.
+COMMENT: Cross section scales as 1/v (Langevin capture) at low energy.
+COLUMNS: Energy (eV) | Cross section (m2)
+-----------------------------
+ 1.000000e-2	1.500000e-18
+ 2.500000e-2	1.200000e-18
+ 5.000000e-2	9.500000e-19
+ 1.000000e-1	7.800000e-19
+ 5.000000e-1	4.500000e-19
+ 1.000000e+0	3.200000e-19
+ 2.000000e+0	2.100000e-19
+ 5.000000e+0	1.200000e-19
+ 1.000000e+1	6.500000e-20
+ 2.000000e+1	3.200000e-20
+ 5.000000e+1	1.500000e-20
+ 1.000000e+2	8.500000e-21
+ 1.000000e+3	1.000000e-21
+-----------------------------
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
