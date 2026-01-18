@@ -4,4 +4,12 @@
 back/
 sphere /results/
 wall /results/
-iech /results/
+iech/results/
+iech2/results/
+sphere2/
+capsule/
+Ar/
+docs/
+iech/
+iech2/results/
+*.gitignore

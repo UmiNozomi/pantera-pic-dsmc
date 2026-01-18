@@ -337,10 +337,22 @@ MODULE initialization
             END IF
          END IF
 
-
          ! ~~~~~~~~~~~~~  Thermal bath  ~~~~~~~~~~~~~~~~~
          IF (line=='Thermal_bath_bool:')  READ(in1,*) BOOL_THERMAL_BATH
-         IF (line=='Thermal_bath_Ttr:')  READ(in1,*) TBATH
+         IF (line=='Thermal_bath_Ttr:')   READ(in1,*) TBATH
+         
+         ! ~~~~~~~~~~~~~ Spectral Diagnostics ~~~~~~~~~~~~~
+         IF (line=='Bool_spectral_diagnostics:') READ(in1,*) BOOL_SPECTRAL_DIAGNOSTICS
+         IF (line=='Spectral_sampling_rate:') READ(in1,*) SPECTRAL_SAMPLING_RATE
+         IF (line=='N_spectral_bins:') READ(in1,*) N_SPECTRAL_BINS
+         IF (line=='Spectral_LOS_direction:') THEN
+            READ(in1,*) SPECTRAL_LOS_DIRECTION(1), SPECTRAL_LOS_DIRECTION(2), SPECTRAL_LOS_DIRECTION(3)
+            ! Normalize the direction vector
+            SPECTRAL_LOS_DIRECTION = SPECTRAL_LOS_DIRECTION / &
+               SQRT(SPECTRAL_LOS_DIRECTION(1)**2 + SPECTRAL_LOS_DIRECTION(2)**2 + SPECTRAL_LOS_DIRECTION(3)**2)
+         END IF
+         IF (line=='Spectral_background_fraction:') READ(in1,*) SPECTRAL_BACKGROUND_FRACTION
+         IF (line=='Bool_reaction_statistics:') READ(in1,*) BOOL_REACTION_STATISTICS
          
 
          ! ~~~~~~~~~~~~~  Particle injection at boundaries ~~~~~~~~~~~
@@ -1839,6 +1851,76 @@ MODULE initialization
 
          NEW_REACTION%EA = NEW_REACTION%EA * QE
          NEW_REACTION%COUNTS = 0
+         
+         ! ========== Spectral Diagnostics: Auto-detect excitation reactions ==========
+         NEW_REACTION%PRODUCES_HALPHA = .FALSE.
+         NEW_REACTION%EMITTING_PRODUCT_ID = 0
+         
+         ! Method 1: Check for explicit 'Ha' marker in products
+         IF (N_STR .GE. 7) THEN
+            IF (TRIM(ADJUSTL(STRARRAY(5))) == 'Ha') NEW_REACTION%PRODUCES_HALPHA = .TRUE.
+            IF (TRIM(ADJUSTL(STRARRAY(7))) == 'Ha') NEW_REACTION%PRODUCES_HALPHA = .TRUE.
+         END IF
+         IF (N_STR .GE. 9) THEN
+            IF (TRIM(ADJUSTL(STRARRAY(9))) == 'Ha') NEW_REACTION%PRODUCES_HALPHA = .TRUE.
+         END IF
+         IF (N_STR .GE. 11) THEN
+            IF (TRIM(ADJUSTL(STRARRAY(11))) == 'Ha') NEW_REACTION%PRODUCES_HALPHA = .TRUE.
+         END IF
+         
+         ! Method 2: Auto-detect EXCITATION reactions that produce H atoms
+         ! Check if reaction filename contains "EXCITATION" or "excitation"
+         IF (NEW_REACTION%TYPE == LXCAT) THEN
+            IF (INDEX(REACTION_FILENAME, 'EXCITATION') > 0 .OR. &
+                INDEX(REACTION_FILENAME, 'excitation') > 0 .OR. &
+                INDEX(REACTION_FILENAME, 'Excitation') > 0) THEN
+               ! This is an excitation reaction - check if it produces H atoms
+               IF (NEW_REACTION%P1_SP_ID .GT. 0) THEN
+                  IF (SPECIES(NEW_REACTION%P1_SP_ID)%NAME == 'H') THEN
+                     NEW_REACTION%PRODUCES_HALPHA = .TRUE.
+                     NEW_REACTION%EMITTING_PRODUCT_ID = 1
+                  END IF
+               END IF
+               IF (NEW_REACTION%N_PROD .GE. 2 .AND. NEW_REACTION%P2_SP_ID .GT. 0) THEN
+                  IF (SPECIES(NEW_REACTION%P2_SP_ID)%NAME == 'H') THEN
+                     NEW_REACTION%PRODUCES_HALPHA = .TRUE.
+                     IF (NEW_REACTION%EMITTING_PRODUCT_ID == 0) NEW_REACTION%EMITTING_PRODUCT_ID = 2
+                  END IF
+               END IF
+               IF (NEW_REACTION%N_PROD .GE. 3 .AND. NEW_REACTION%P3_SP_ID .GT. 0) THEN
+                  IF (SPECIES(NEW_REACTION%P3_SP_ID)%NAME == 'H') THEN
+                     NEW_REACTION%PRODUCES_HALPHA = .TRUE.
+                     IF (NEW_REACTION%EMITTING_PRODUCT_ID == 0) NEW_REACTION%EMITTING_PRODUCT_ID = 3
+                  END IF
+               END IF
+               IF (NEW_REACTION%N_PROD .GE. 4 .AND. NEW_REACTION%P4_SP_ID .GT. 0) THEN
+                  IF (SPECIES(NEW_REACTION%P4_SP_ID)%NAME == 'H') THEN
+                     NEW_REACTION%PRODUCES_HALPHA = .TRUE.
+                     IF (NEW_REACTION%EMITTING_PRODUCT_ID == 0) NEW_REACTION%EMITTING_PRODUCT_ID = 4
+                  END IF
+               END IF
+            END IF
+         END IF
+         
+         ! If Ha marker was found but no H atom identified yet, search for H in all products
+         IF (NEW_REACTION%PRODUCES_HALPHA .AND. NEW_REACTION%EMITTING_PRODUCT_ID == 0) THEN
+            IF (NEW_REACTION%P1_SP_ID .GT. 0) THEN
+               IF (SPECIES(NEW_REACTION%P1_SP_ID)%NAME == 'H') NEW_REACTION%EMITTING_PRODUCT_ID = 1
+            END IF
+            IF (NEW_REACTION%N_PROD .GE. 2 .AND. NEW_REACTION%P2_SP_ID .GT. 0) THEN
+               IF (SPECIES(NEW_REACTION%P2_SP_ID)%NAME == 'H') &
+                  NEW_REACTION%EMITTING_PRODUCT_ID = 2
+            END IF
+            IF (NEW_REACTION%N_PROD .GE. 3 .AND. NEW_REACTION%P3_SP_ID .GT. 0) THEN
+               IF (SPECIES(NEW_REACTION%P3_SP_ID)%NAME == 'H') &
+                  NEW_REACTION%EMITTING_PRODUCT_ID = 3
+            END IF
+            IF (NEW_REACTION%N_PROD .GE. 4 .AND. NEW_REACTION%P4_SP_ID .GT. 0) THEN
+               IF (SPECIES(NEW_REACTION%P4_SP_ID)%NAME == 'H') &
+                  NEW_REACTION%EMITTING_PRODUCT_ID = 4
+            END IF
+         END IF
+         ! ========== End of Halpha detection ==========
 
          IF (ReasonEOF < 0) EXIT ! End of file reached
          
@@ -2480,6 +2562,33 @@ MODULE initialization
             NNODES = NX+1
          ELSE IF (DIMS == 2) THEN
             NNODES = (NX+1)*(NY+1)
+         END IF
+      END IF
+    
+      IF (PROC_ID == 0) THEN
+         WRITE(*,*) '  Max collision cross section:', SIGMAMAX
+      END IF
+
+      ! ========== Initialize Spectral Diagnostics Arrays ==========
+      IF (BOOL_SPECTRAL_DIAGNOSTICS) THEN
+         ALLOCATE(SPECTRAL_HISTOGRAM(N_SPECTRAL_BINS))
+         SPECTRAL_HISTOGRAM = 0
+         SPECTRAL_TOTAL_EVENTS = 0
+         IF (PROC_ID == 0) THEN
+            WRITE(*,*) '  Spectral diagnostics enabled'
+            WRITE(*,*) '    Bins:', N_SPECTRAL_BINS
+            WRITE(*,*) '    vLOS range [m/s]:', SPECTRAL_VLOS_MIN, 'to', SPECTRAL_VLOS_MAX
+            WRITE(*,*) '    Sampling rate:', SPECTRAL_SAMPLING_RATE
+         END IF
+      END IF
+
+      ! ========== Initialize Reaction Statistics Arrays ==========
+      IF (BOOL_REACTION_STATISTICS) THEN
+         ALLOCATE(REACTION_CELL_COUNTS(N_REACTIONS, NCELLS))
+         REACTION_CELL_COUNTS = 0
+         IF (PROC_ID == 0) THEN
+            WRITE(*,*) '  Reaction statistics enabled (VTK output)'
+            WRITE(*,*) '    Tracking', N_REACTIONS, 'reactions in', NCELLS, 'cells'
          END IF
       END IF
 

@@ -121,7 +121,7 @@ Thermal_bath_Ttr:
 
 ! ========= Reactions ==============================
 Reactions_file:
-    H2.react
+    hydrogen.react
 
 Wall_reactions_file:
     H2.wall

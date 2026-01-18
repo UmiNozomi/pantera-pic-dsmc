@@ -2026,5 +2026,94 @@ MODULE postprocess
 
 
 
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! SUBROUTINE WRITE_SPECTRAL_OUTPUT - Output Halpha spectrum to file  !
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   SUBROUTINE WRITE_SPECTRAL_OUTPUT(tID)
+      USE mpi_common
+      
+      IMPLICIT NONE
+      
+      INTEGER, INTENT(IN) :: tID
+      CHARACTER(LEN=256) :: filename
+      INTEGER :: i, unit_num
+      REAL(KIND=8) :: vLOS, wavelength, lambda0
+      INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: GLOBAL_HISTOGRAM
+      INTEGER(KIND=8) :: GLOBAL_TOTAL_EVENTS
+      LOGICAL :: file_exists
+      CHARACTER(LEN=20) :: fmt_string
+      
+      lambda0 = 656.28D-9  ! Hα wavelength in m
+      
+      ! MPI Reduce: collect histogram from all processes to rank 0
+      IF (PROC_ID .EQ. 0) THEN
+         ALLOCATE(GLOBAL_HISTOGRAM(N_SPECTRAL_BINS))
+      ELSE
+         ALLOCATE(GLOBAL_HISTOGRAM(N_SPECTRAL_BINS))
+      END IF
+      
+      CALL MPI_REDUCE(SPECTRAL_HISTOGRAM, GLOBAL_HISTOGRAM, N_SPECTRAL_BINS, &
+                      MPI_INTEGER8, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      CALL MPI_REDUCE(SPECTRAL_TOTAL_EVENTS, GLOBAL_TOTAL_EVENTS, 1, &
+                      MPI_INTEGER8, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      
+      ! Only rank 0 writes output
+      IF (PROC_ID .EQ. 0) THEN
+         ! Use a single cumulative file in matrix format
+         WRITE(filename, '(A,A)') TRIM(FLOWFIELD_SAVE_PATH), 'spectrum_halpha_cumulative.dat'
+         
+         ! Check if file exists to determine if we need to write header
+         INQUIRE(FILE=TRIM(filename), EXIST=file_exists)
+         
+         unit_num = 200
+         
+         IF (.NOT. file_exists) THEN
+            ! Create new file and write wavelength header row
+            OPEN(unit_num, FILE=TRIM(filename), STATUS='REPLACE')
+            
+            ! Write comment header
+            WRITE(unit_num, '(A)') '# Halpha cumulative spectrum - Matrix format'
+            WRITE(unit_num, '(A)') '# First row: wavelengths [nm]'
+            WRITE(unit_num, '(A)') '# First column: timestep'
+            WRITE(unit_num, '(A)') '# Data: emission counts at each wavelength and timestep'
+            
+            ! Write wavelength header row: "timestep  λ1  λ2  λ3  ..."
+            WRITE(unit_num, '(A10)', ADVANCE='NO') 'timestep'
+            DO i = 1, N_SPECTRAL_BINS
+               vLOS = SPECTRAL_VLOS_MIN + (i-0.5d0)*(SPECTRAL_VLOS_MAX-SPECTRAL_VLOS_MIN)/N_SPECTRAL_BINS
+               wavelength = lambda0 * (1.d0 + vLOS/2.998d8) * 1.d9  ! Doppler shift, convert to nm
+               WRITE(unit_num, '(2X,F10.4)', ADVANCE='NO') wavelength
+            END DO
+            WRITE(unit_num, *)  ! New line after header
+            
+            CLOSE(unit_num)
+         END IF
+         
+         ! Append data row: "timestep  count1  count2  count3  ..."
+         OPEN(unit_num, FILE=TRIM(filename), STATUS='OLD', POSITION='APPEND')
+         
+         ! Write timestep in first column
+         WRITE(unit_num, '(I10)', ADVANCE='NO') tID
+         
+         ! Write counts for all wavelength bins
+         DO i = 1, N_SPECTRAL_BINS
+            WRITE(unit_num, '(2X,I10)', ADVANCE='NO') GLOBAL_HISTOGRAM(i)
+         END DO
+         WRITE(unit_num, *)  ! New line after data row
+         
+         CLOSE(unit_num)
+         
+         IF (PROC_ID .EQ. 0) WRITE(*,'(A,I8,A,I12,A)') '  Appended Halpha spectrum at timestep ', tID, &
+                                                       ' (', GLOBAL_TOTAL_EVENTS, ' events) to matrix file'
+      END IF
+      
+      DEALLOCATE(GLOBAL_HISTOGRAM)
+      
+      ! Reset histogram for next output period
+      SPECTRAL_HISTOGRAM = 0
+      SPECTRAL_TOTAL_EVENTS = 0
+      
+   END SUBROUTINE WRITE_SPECTRAL_OUTPUT
+
 
 END MODULE postprocess

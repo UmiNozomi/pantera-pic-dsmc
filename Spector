@@ -1,0 +1,84 @@
+Role: You are an expert Fortran developer specializing in PIC-DSMC plasma simulation codes and MPI parallelization.
+
+Task: Implement two major diagnostic features in the `pantera-pic-dsmc` project:
+1. **Synthetic Spectral Diagnostics (H-alpha)**: 
+   - Uses a "Marker Species" logic (e.g., "Ha" implies emission, but "H" provides the velocity).
+   - Break down the spectrum by the **Projectile Species** (Reactant 1) causing the collision.
+2. **Spatial Reaction Statistics**: 
+   - Count reaction events per grid cell and output them to VTK files.
+
+Please implement the changes file-by-file as described below:
+
+### Step 1: Global Variables (`src/global.f90`)
+In `MODULE global`, add the following variables:
+
+**A. For Spectral Diagnostics:**
+- Parameters: `N_LAMBDA_BINS` (e.g., 1000), `LAMBDA_CENTER` (656.28d-9), `LAMBDA_WINDOW` (0.1d-9), `C_LIGHT` (299792458.d0).
+- Arrays:
+  - `SPECTRUM_TOTAL` (1D array, size `N_LAMBDA_BINS`) for the summed spectrum.
+  - `SPECTRUM_BY_SPECIES` (2D array, size `N_SPECIES, N_LAMBDA_BINS`) for local accumulation per projectile.
+  - `SPECTRUM_TOTAL_BY_SPECIES` (2D array, size `N_SPECIES, N_LAMBDA_BINS`) for global MPI reduction.
+- IDs: `MARKER_SPECIES_ID` (integer) and `EMITTER_SPECIES_ID` (integer).
+- Vector: `LOS_VECTOR` (3-component array, default `(/1.d0, 0.d0, 0.d0/)`).
+
+**B. For Reaction Statistics:**
+- Arrays:
+  - `TIMESTEP_REAC_COUNTS` (Integer, Allocatable, Dim: `N_REACTIONS, NCELLS`) for current step counts.
+  - `AVG_REAC_COUNTS` (Real, Allocatable, Dim: `N_REACTIONS, NCELLS`) for time-averaged output.
+
+### Step 2: Initialization (`src/initialization.f90`)
+- **Allocate** all allocatable arrays defined above (`SPECTRUM_...`, `..._REAC_COUNTS`).
+- Initialize them to zero.
+- **Lookup IDs**: 
+  - Find the species index for "Ha" and assign to `MARKER_SPECIES_ID`.
+  - Find the species index for "H" and assign to `EMITTER_SPECIES_ID`.
+  - If names are not found, handle gracefully (e.g., disable diagnostics).
+
+### Step 3: Collision Logic (`src/collisions.f90`)
+Modify `VAHEDI_COLLIS`, `VSS_COLLIS`, and `MCC_COLLISIONS`.
+
+**A. Reset Logic**:
+- Ensure `TIMESTEP_REAC_COUNTS` is reset to zero at the beginning of each timestep (create a helper subroutine `RESET_REAC_STATS` if needed and call it appropriately).
+
+**B. Inside the Reaction Loop (where `rf() < P_REACT`):**
+1. **Spatial Counting**:
+   - Increment `TIMESTEP_REAC_COUNTS(ReactionIndex, CellIndex)` by 1.
+   
+2. **Spectral Diagnostics (The Marker Logic)**:
+   - **Check Trigger**: Does the reaction product list contain `MARKER_SPECIES_ID`?
+   - **Identify Projectile**: Let `PROJECTILE_ID = REACTIONS(JR)%R1_SP_ID`.
+   - **Find Velocity Source**:
+     - If triggered, search the products for `EMITTER_SPECIES_ID`.
+     - If Product 1 is Emitter, use velocity `C1`.
+     - If Product 2 is Emitter, use velocity `C2`.
+     - (Do NOT use the Marker's velocity).
+   - **Calculate & Bin**:
+     - Calculate `V_LOS = dot_product(Selected_Velocity, LOS_VECTOR)`.
+     - Calculate `lambda = LAMBDA_CENTER * (1.0d0 - V_LOS / C_LIGHT)`.
+     - Determine `BIN_IDX`.
+     - If valid bin:
+       - Add `FNUM` to `SPECTRUM_TOTAL(BIN_IDX)`.
+       - Add `FNUM` to `SPECTRUM_BY_SPECIES(PROJECTILE_ID, BIN_IDX)`.
+
+### Step 4: Postprocess (`src/postprocess.f90`)
+**A. In `SUBROUTINE GRID_AVG`**:
+- Perform `MPI_REDUCE` on `TIMESTEP_REAC_COUNTS` to sum counts from all processors.
+- Update `AVG_REAC_COUNTS` using the cumulative average formula.
+
+**B. In `SUBROUTINE GRID_RESET`**:
+- Reset `AVG_REAC_COUNTS` to zero.
+
+**C. In `SUBROUTINE GRID_SAVE` (Output)**:
+- **VTK Output**: Inside the cell data loop, write `AVG_REAC_COUNTS` for each reaction as a scalar field (e.g., named "reaction_events_1", "reaction_events_2"...).
+- **Spectrum Output**:
+  - Perform `MPI_REDUCE` on `SPECTRUM_TOTAL` (MPI_SUM).
+  - Perform `MPI_REDUCE` on `SPECTRUM_BY_SPECIES` into `SPECTRUM_TOTAL_BY_SPECIES` (MPI_SUM).
+  - On Rank 0, write `spectrum_halpha.dat` with columns:
+    - Col 1: Wavelength
+    - Col 2: Total Intensity
+    - Col 3...N: Intensity for each Projectile Species (use species names in header).
+
+### Constraints
+- Ensure strict Fortran 90 syntax.
+- Ensure correct MPI data types (`MPI_DOUBLE_PRECISION` for spectra, `MPI_INTEGER` for counts).
+- Handle the case where the Emitter might be in Slot 1 or Slot 2 dynamically.

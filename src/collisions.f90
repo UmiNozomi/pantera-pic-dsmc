@@ -24,6 +24,7 @@ MODULE collisions
    USE mpi_common
    USE screen
    USE tools
+   USE secondary_electron_emission, ONLY: GAUSSIAN_RANDOM
    
    IMPLICIT NONE
    
@@ -1638,6 +1639,9 @@ MODULE collisions
       TYPE(PARTICLE_DATA_STRUCTURE) :: NEWparticle
       REAL(KIND=8) :: NULL_COLL_FREQ, P_NULL, R_SELECT, P_CUMULATED
       LOGICAL :: HAS_REACTED
+      ! Spectral diagnostics variables
+      REAL(KIND=8) :: vLOS
+      INTEGER :: EMITTER_ID, JC
 
       PI2 = 2*PI
 
@@ -1912,6 +1916,42 @@ MODULE collisions
 
                   ! If this pair had a chemical reaction, exit and don't test any other reaction.
                   HAS_REACTED = .TRUE.
+                  
+                  ! ========== Spectral Diagnostics: Record Halpha emission ==========
+                  IF (REACTIONS(JR)%PRODUCES_HALPHA .AND. BOOL_SPECTRAL_DIAGNOSTICS) THEN
+                     ! Random sampling to reduce computational cost
+                     IF (rf() < SPECTRAL_SAMPLING_RATE) THEN
+                        ! Find the emitting particle (H atom)
+                        EMITTER_ID = -1
+                        IF (REACTIONS(JR)%EMITTING_PRODUCT_ID == 1) EMITTER_ID = JP1
+                        IF (REACTIONS(JR)%EMITTING_PRODUCT_ID == 2) EMITTER_ID = JP2
+                        IF (REACTIONS(JR)%N_PROD .GE. 3 .AND. REACTIONS(JR)%EMITTING_PRODUCT_ID == 3) THEN
+                           ! Product 3 was just created and is at the end of particle array
+                           EMITTER_ID = NP_PROC
+                        END IF
+                        ! Note: Product 4 similar handling would go here if needed
+                        
+                        IF (EMITTER_ID > 0 .AND. EMITTER_ID <= NP_PROC) THEN
+                           ! Compute line-of-sight velocity component
+                           vLOS = particles(EMITTER_ID)%VX * SPECTRAL_LOS_DIRECTION(1) + &
+                                  particles(EMITTER_ID)%VY * SPECTRAL_LOS_DIRECTION(2) + &
+                                  particles(EMITTER_ID)%VZ * SPECTRAL_LOS_DIRECTION(3)
+                           
+                           ! Accumulate to histogram
+                           CALL ACCUMULATE_SPECTRAL_EVENT(vLOS)
+                        END IF
+                     END IF
+                  END IF
+                  
+                  ! ========== Reaction Statistics: Count reaction per cell ==========
+                  IF (BOOL_REACTION_STATISTICS) THEN
+                     JC = particles(JP1)%IC
+                     IF (JC .GE. 1 .AND. JC .LE. NCELLS) THEN
+                        REACTION_CELL_COUNTS(JR, JC) = REACTION_CELL_COUNTS(JR, JC) + 1
+                     END IF
+                  END IF
+                  ! ========== End of diagnostics ==========
+                  
                   EXIT
                END IF
             END DO
@@ -1921,6 +1961,50 @@ MODULE collisions
       END DO
 
    END SUBROUTINE MCC_COLLISIONS_VAHEDI
+
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! SUBROUTINE ACCUMULATE_SPECTRAL_EVENT - Accumulate Halpha emission to histogram !
+   ! Phenomenological model with background emission fraction                        !
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   SUBROUTINE ACCUMULATE_SPECTRAL_EVENT(vLOS)
+      IMPLICIT NONE
+      REAL(KIND=8), INTENT(IN) :: vLOS
+      INTEGER :: bin_index
+      REAL(KIND=8) :: vLOS_effective, v_thermal_std, T_emitter, m_H
+      
+      ! Background temperature and mass
+      T_emitter = MCC_BG_TTRA         ! K, temperature
+      m_H = 1.6737236d-27             ! kg, hydrogen atom mass
+      v_thermal_std = SQRT(kB * T_emitter / m_H)
+      
+      ! === Phenomenological dual-channel model ===
+      ! Channel 1: "Background emission" - models e- + H_cold excitation (missing from reactions)
+      ! Channel 2: "Fast emission" - real H + H2 collision excitation (from simulation)
+      
+      IF (rf() < SPECTRAL_BACKGROUND_FRACTION) THEN
+         ! ===== BACKGROUND CHANNEL (Central Peak) =====
+         ! Phenomenological: assumes cold H atoms excited by electrons
+         ! Velocity is purely thermal (centered at 0)
+         vLOS_effective = v_thermal_std * GAUSSIAN_RANDOM()
+         
+      ELSE
+         ! ===== FAST CHANNEL (Doppler Wings) =====
+         ! Real simulation: H atoms excited by H2 collisions (high energy)
+         ! Use nascent velocity + thermal jitter
+         vLOS_effective = vLOS + v_thermal_std * GAUSSIAN_RANDOM()
+      END IF
+      
+      ! Compute bin index
+      bin_index = INT((vLOS_effective - SPECTRAL_VLOS_MIN) / &
+                      (SPECTRAL_VLOS_MAX - SPECTRAL_VLOS_MIN) * N_SPECTRAL_BINS) + 1
+      
+      ! Check if within range and accumulate
+      IF (bin_index >= 1 .AND. bin_index <= N_SPECTRAL_BINS) THEN
+         SPECTRAL_HISTOGRAM(bin_index) = SPECTRAL_HISTOGRAM(bin_index) + 1
+         SPECTRAL_TOTAL_EVENTS = SPECTRAL_TOTAL_EVENTS + 1
+      END IF
+   END SUBROUTINE ACCUMULATE_SPECTRAL_EVENT
 
 
 END MODULE collisions

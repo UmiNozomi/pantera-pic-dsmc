@@ -358,6 +358,8 @@ MODULE timecycle
             IF (MOD(tID-DUMP_GRID_START, DUMP_GRID_AVG_EVERY*DUMP_GRID_N_AVG) .EQ. 0) THEN
                CALL GRID_AVG
                CALL GRID_SAVE
+               ! Output spectral diagnostics if enabled
+               IF (BOOL_SPECTRAL_DIAGNOSTICS) CALL WRITE_SPECTRAL_OUTPUT(tID)
                CALL GRID_RESET
             ! If we are just in a grid average timestep, compute the grid average
             ELSE IF (MOD(tID-DUMP_GRID_START, DUMP_GRID_AVG_EVERY) .EQ. 0) THEN

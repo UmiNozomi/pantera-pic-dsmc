@@ -443,6 +443,27 @@ MODULE global
    LOGICAL           :: BOOL_THERMAL_BATH = .FALSE.
    REAL(KIND=8)      :: TBATH
 
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   !!!!!!!!! Spectral Diagnostics !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   
+   LOGICAL :: BOOL_SPECTRAL_DIAGNOSTICS = .FALSE.
+   REAL(KIND=8) :: SPECTRAL_SAMPLING_RATE = 1.0D0
+   INTEGER :: N_SPECTRAL_BINS = 200
+   REAL(KIND=8) :: SPECTRAL_VLOS_MIN = -2.3D6  ! m/s (corresponds to ~-5 nm from Hα center)
+   REAL(KIND=8) :: SPECTRAL_VLOS_MAX = +2.3D6  ! m/s (corresponds to ~+5 nm from Hα center)
+   REAL(KIND=8), DIMENSION(3) :: SPECTRAL_LOS_DIRECTION = (/0.d0, 0.d0, 1.d0/)  ! Default: Z direction
+   REAL(KIND=8) :: SPECTRAL_BACKGROUND_FRACTION = 0.0D0  ! Fraction of "background emission" (0.0-1.0)
+   INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: SPECTRAL_HISTOGRAM  ! Velocity histogram
+   INTEGER(KIND=8) :: SPECTRAL_TOTAL_EVENTS = 0
+   
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   !!!!!!!!! Reaction Statistics for VTK Output !!!!!!!!!!!!!!!!!!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   
+   LOGICAL :: BOOL_REACTION_STATISTICS = .FALSE.
+   INTEGER, DIMENSION(:,:), ALLOCATABLE :: REACTION_CELL_COUNTS  ! (N_REACTIONS, NCELLS)
+
    INTEGER           :: BGK_MODEL_TYPE_INT = 0
    REAL(KIND=8)      :: BGK_BG_DENS, BGK_SIGMA, BGK_BG_MASS
 
@@ -608,6 +629,9 @@ MODULE global
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TABLE_CS
       REAL(KIND=8) :: MAX_SIGMA
       INTEGER :: COUNTS
+      ! Spectral diagnostics fields
+      LOGICAL :: PRODUCES_HALPHA = .FALSE.
+      INTEGER :: EMITTING_PRODUCT_ID = 0
    END TYPE REACTIONS_DATA_STRUCTURE
 
    TYPE(REACTIONS_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: REACTIONS, TEMP_REACTIONS
