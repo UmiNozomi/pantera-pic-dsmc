@@ -1917,7 +1917,7 @@ MODULE collisions
                   ! If this pair had a chemical reaction, exit and don't test any other reaction.
                   HAS_REACTED = .TRUE.
                   
-                  ! ========== Spectral Diagnostics: Record Halpha emission ==========
+                  ! ========== Spectral Diagnostics: Mark H* excited particles for delayed emission ==========
                   IF (REACTIONS(JR)%PRODUCES_HALPHA .AND. BOOL_SPECTRAL_DIAGNOSTICS) THEN
                      ! Random sampling to reduce computational cost
                      IF (rf() < SPECTRAL_SAMPLING_RATE) THEN
@@ -1932,13 +1932,18 @@ MODULE collisions
                         ! Note: Product 4 similar handling would go here if needed
                         
                         IF (EMITTER_ID > 0 .AND. EMITTER_ID <= NP_PROC) THEN
-                           ! Compute line-of-sight velocity component
-                           vLOS = particles(EMITTER_ID)%VX * SPECTRAL_LOS_DIRECTION(1) + &
-                                  particles(EMITTER_ID)%VY * SPECTRAL_LOS_DIRECTION(2) + &
-                                  particles(EMITTER_ID)%VZ * SPECTRAL_LOS_DIRECTION(3)
+                           ! Mark particle as excited (H* n=3 state)
+                           ! Do NOT record velocity yet - will record at emission time (15.6 ns later)
+                           particles(EMITTER_ID)%IS_EXCITED_HALPHA = .TRUE.
+                           particles(EMITTER_ID)%EXCITATION_TIME = DBLE(tID) * DT
                            
-                           ! Accumulate to histogram
-                           CALL ACCUMULATE_SPECTRAL_EVENT(vLOS)
+                           ! Add to efficient tracking list
+                           N_EXCITED_HALPHA = N_EXCITED_HALPHA + 1
+                           IF (N_EXCITED_HALPHA > SIZE(EXCITED_HALPHA_INDICES)) THEN
+                              ! Expand tracking array if needed (rare)
+                              CALL EXPAND_EXCITED_INDICES_ARRAY
+                           END IF
+                           EXCITED_HALPHA_INDICES(N_EXCITED_HALPHA) = EMITTER_ID
                         END IF
                      END IF
                   END IF
@@ -2004,7 +2009,90 @@ MODULE collisions
          SPECTRAL_HISTOGRAM(bin_index) = SPECTRAL_HISTOGRAM(bin_index) + 1
          SPECTRAL_TOTAL_EVENTS = SPECTRAL_TOTAL_EVENTS + 1
       END IF
+      
    END SUBROUTINE ACCUMULATE_SPECTRAL_EVENT
+
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! SUBROUTINE PROCESS_DELAYED_HALPHA_EMISSION                                   !!!
+   ! Processes excited H*(n=3) particles for delayed emission (tau = 15.6 ns)     !!!
+   ! Uses efficient index-based tracking for O(N_excited) instead of O(N_all)    !!!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   
+   SUBROUTINE PROCESS_DELAYED_HALPHA_EMISSION
+      IMPLICIT NONE
+      INTEGER :: I, JP, new_count
+      REAL(KIND=8) :: elapsed_time, decay_prob, vLOS
+      REAL(KIND=8), PARAMETER :: TAU_HALPHA = 15.6d-9  ! Natural lifetime [s]
+      INTEGER, DIMENSION(:), ALLOCATABLE :: temp_indices
+      
+      IF (N_EXCITED_HALPHA == 0) RETURN  ! No excited particles to process
+      
+      ! Process only excited particles (efficiency optimization)
+      new_count = 0
+      DO I = 1, N_EXCITED_HALPHA
+         JP = EXCITED_HALPHA_INDICES(I)
+         
+         ! Safety check: particle still exists and is excited
+         IF (JP < 1 .OR. JP > NP_PROC) CYCLE
+         IF (.NOT. particles(JP)%IS_EXCITED_HALPHA) CYCLE
+         
+         ! Calculate time since excitation
+         elapsed_time = DBLE(tID) * DT - particles(JP)%EXCITATION_TIME
+         
+         ! Probability of emission in this timestep: P = 1 - exp(-dt/tau)
+         decay_prob = 1.0d0 - EXP(-DT / TAU_HALPHA)
+         
+         IF (rf() < decay_prob) THEN
+            ! Particle emits NOW - record CURRENT velocity (after thermalization)
+            vLOS = particles(JP)%VX * SPECTRAL_LOS_DIRECTION(1) + &
+                   particles(JP)%VY * SPECTRAL_LOS_DIRECTION(2) + &
+                   particles(JP)%VZ * SPECTRAL_LOS_DIRECTION(3)
+            
+            CALL ACCUMULATE_SPECTRAL_EVENT(vLOS)
+            
+            ! Reset excited state flag
+            particles(JP)%IS_EXCITED_HALPHA = .FALSE.
+            particles(JP)%EXCITATION_TIME = 0.d0
+         ELSE
+            ! Particle still excited - keep in list
+            new_count = new_count + 1
+            EXCITED_HALPHA_INDICES(new_count) = JP
+         END IF
+      END DO
+      
+      ! Update count (compaction: removed emitted particles from list)
+      N_EXCITED_HALPHA = new_count
+      
+   END SUBROUTINE PROCESS_DELAYED_HALPHA_EMISSION
+
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! SUBROUTINE EXPAND_EXCITED_INDICES_ARRAY                                      !!!
+   ! Expands the tracking array when it becomes full (rare operation)            !!!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   
+   SUBROUTINE EXPAND_EXCITED_INDICES_ARRAY
+      IMPLICIT NONE
+      INTEGER, DIMENSION(:), ALLOCATABLE :: temp_array
+      INTEGER :: old_size, new_size
+      
+      old_size = SIZE(EXCITED_HALPHA_INDICES)
+      new_size = old_size * 2  ! Double the size
+      
+      ! Backup current data
+      ALLOCATE(temp_array(old_size))
+      temp_array = EXCITED_HALPHA_INDICES
+      
+      ! Reallocate to larger size
+      DEALLOCATE(EXCITED_HALPHA_INDICES)
+      ALLOCATE(EXCITED_HALPHA_INDICES(new_size))
+      
+      ! Restore data
+      EXCITED_HALPHA_INDICES(1:old_size) = temp_array
+      DEALLOCATE(temp_array)
+      
+   END SUBROUTINE EXPAND_EXCITED_INDICES_ARRAY
 
 
 END MODULE collisions

@@ -57,7 +57,7 @@ All_output_path:
 Fnum:
   2e5
 Timestep:
-    1.0e-11
+    2.0e-11
 Number_of_timesteps:
     1000000
 Stats_every:
@@ -99,7 +99,7 @@ N_spectral_bins: ! 光谱分辨率（波长点数）Resolution: 200=低, 500=中
     1000          ! 推荐: 500-1000 for higher resolution
 
 Spectral_LOS_direction: ! 观测方向 (X, Y, Z)，会自动归一化
-    1.0 0.0 0.0         ! Z轴(默认)。其他例子: X轴=(1,0,0), Y轴=(0,1,0), 对角线=(1,1,1)
+    1.0 0.5 0.0         ! Z轴(默认)。其他例子: X轴=(1,0,0), Y轴=(0,1,0), 对角线=(1,1,1)
 
 Bool_reaction_statistics:
     .TRUE.
@@ -123,7 +123,7 @@ Collision_type: ! [MCC / DSMC / BGK / NONE]
 ! DSMC VHS collisions
 
 MCC_background_dens:
-    1.9E20
+    1.7E20
 MCC_background_Ttra:
     300
 MCC_background_mixture:

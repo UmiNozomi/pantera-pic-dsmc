@@ -328,11 +328,15 @@ MODULE timecycle
 
          CALL MPI_BARRIER(MPI_COMM_WORLD, ierr)
          CALL TIMER_START(6)
+         
+         ! Process delayed Hα emission BEFORE collisions (allows particles to thermalize)
+         IF (BOOL_SPECTRAL_DIAGNOSTICS) CALL PROCESS_DELAYED_HALPHA_EMISSION
+         
          IF (COLLISION_TYPE == MCC)  CALL MCC_COLLISIONS
          IF (COLLISION_TYPE == MCC_VAHEDI)  CALL MCC_COLLISIONS_VAHEDI
 
 
-         IF (COLLISION_TYPE == DSMC .OR. COLLISION_TYPE == DSMC_VAHEDI) THEN
+         IF (COLLISION_TYPE == DSMC .OR. COLLISION_TYPE ==DSMC_VAHEDI) THEN
             CALL DSMC_COLLISIONS
          END IF
 

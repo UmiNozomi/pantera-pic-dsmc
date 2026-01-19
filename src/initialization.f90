@@ -2574,8 +2574,13 @@ MODULE initialization
          ALLOCATE(SPECTRAL_HISTOGRAM(N_SPECTRAL_BINS))
          SPECTRAL_HISTOGRAM = 0
          SPECTRAL_TOTAL_EVENTS = 0
+         
+         ! Initialize delayed emission tracking (efficiency optimization)
+         ALLOCATE(EXCITED_HALPHA_INDICES(1000))  ! Initial size, will auto-expand
+         N_EXCITED_HALPHA = 0
+         
          IF (PROC_ID == 0) THEN
-            WRITE(*,*) '  Spectral diagnostics enabled'
+            WRITE(*,*) '  Spectral diagnostics enabled (with delayed emission physics)'
             WRITE(*,*) '    Bins:', N_SPECTRAL_BINS
             WRITE(*,*) '    vLOS range [m/s]:', SPECTRAL_VLOS_MIN, 'to', SPECTRAL_VLOS_MAX
             WRITE(*,*) '    Sampling rate:', SPECTRAL_SAMPLING_RATE

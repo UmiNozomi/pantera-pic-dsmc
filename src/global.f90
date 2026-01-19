@@ -457,6 +457,10 @@ MODULE global
    INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: SPECTRAL_HISTOGRAM  ! Velocity histogram
    INTEGER(KIND=8) :: SPECTRAL_TOTAL_EVENTS = 0
    
+   ! Delayed Hα emission tracking (efficiency optimization)
+   INTEGER, DIMENSION(:), ALLOCATABLE :: EXCITED_HALPHA_INDICES  ! Indices of excited particles
+   INTEGER :: N_EXCITED_HALPHA = 0  ! Number of currently excited particles
+   
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    !!!!!!!!! Reaction Statistics for VTK Output !!!!!!!!!!!!!!!!!!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -837,19 +841,21 @@ CONTAINS  ! @@@@@@@@@@@@@@@@@@@@@ SUBROUTINES @@@@@@@@@@@@@@@@@@@@@@@@
    SUBROUTINE NEWTYPE
    
       INTEGER :: ii, extent_dpr, extent_int, extent_int8, extent_logical
-      INTEGER, DIMENSION(13) :: blocklengths, oldtypes, offsets
+      INTEGER, DIMENSION(15) :: blocklengths, oldtypes, offsets
      
       CALL MPI_TYPE_EXTENT(MPI_DOUBLE_PRECISION, extent_dpr,  ierr)  
       CALL MPI_TYPE_EXTENT(MPI_INTEGER,          extent_int,  ierr)
       CALL MPI_TYPE_EXTENT(MPI_INTEGER8,         extent_int8, ierr)
       CALL MPI_TYPE_EXTENT(MPI_LOGICAL,         extent_logical, ierr)
-           
+        
       blocklengths = 1
      
       oldtypes(1:9) = MPI_DOUBLE_PRECISION  
       oldtypes(10:11) = MPI_INTEGER
       oldtypes(12) = MPI_INTEGER8
       oldtypes(13) = MPI_LOGICAL
+      oldtypes(14) = MPI_LOGICAL
+      oldtypes(15) = MPI_DOUBLE_PRECISION
           
       offsets(1) = 0  
       DO ii = 2, 10
@@ -858,8 +864,10 @@ CONTAINS  ! @@@@@@@@@@@@@@@@@@@@@ SUBROUTINES @@@@@@@@@@@@@@@@@@@@@@@@
       offsets(11) = offsets(10) + extent_int * blocklengths(10)
       offsets(12) = offsets(11) + extent_int * blocklengths(11)
       offsets(13) = offsets(12) + extent_int8 * blocklengths(12)
+      offsets(14) = offsets(13) + extent_logical * blocklengths(13)
+      offsets(15) = offsets(14) + extent_logical * blocklengths(14)
       
-      CALL MPI_TYPE_STRUCT(13, blocklengths, offsets, oldtypes, MPI_PARTICLE_DATA_STRUCTURE, ierr)  
+      CALL MPI_TYPE_STRUCT(15, blocklengths, offsets, oldtypes, MPI_PARTICLE_DATA_STRUCTURE, ierr)  
       CALL MPI_TYPE_COMMIT(MPI_PARTICLE_DATA_STRUCTURE, ierr)   
    
    END SUBROUTINE NEWTYPE

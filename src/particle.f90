@@ -34,6 +34,9 @@ USE mpi_common
       INTEGER         :: S_ID           ! Species ID
       INTEGER(KIND=8) :: ID             ! Particle identifier
       LOGICAL         :: DUMP_TRAJ      ! The trajectory of this particle should be dumped
+      ! Delayed Hα emission tracking
+      LOGICAL         :: IS_EXCITED_HALPHA  ! Excited to H*(n=3) state
+      REAL(KIND=8)    :: EXCITATION_TIME    ! Time when particle was excited
    END TYPE PARTICLE_DATA_STRUCTURE
  
    INTEGER(8) :: PARTICLE_ID_COUNTER = 0
@@ -76,6 +79,10 @@ USE mpi_common
       PARTICLE_ID_COUNTER = PARTICLE_ID_COUNTER + 1
 
       particlept%DUMP_TRAJ = .FALSE.
+      
+      ! Initialize Hα emission tracking
+      particlept%IS_EXCITED_HALPHA = .FALSE.
+      particlept%EXCITATION_TIME = 0.d0
       
    END SUBROUTINE INIT_PARTICLE
 
@@ -172,6 +179,8 @@ USE mpi_common
       particlesARRAY(NP_ARRAY)%S_ID = -1
       particlesARRAY(NP_ARRAY)%ID = -1
       particlesARRAY(NP_ARRAY)%DUMP_TRAJ = .FALSE.
+      particlesARRAY(NP_ARRAY)%IS_EXCITED_HALPHA = .FALSE.
+      particlesARRAY(NP_ARRAY)%EXCITATION_TIME = 0.d0
       
 
       NP_ARRAY = NP_ARRAY - 1
