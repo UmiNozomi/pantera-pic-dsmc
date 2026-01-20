@@ -166,19 +166,23 @@ def plot_per_reaction_spectrum(filename='results/spectrum_halpha_cumulative.dat'
     global_max = all_counts.max() * 1.2 if all_counts.max() > 0 else 100
     ax.set_ylim(-0.02 * global_max, global_max)
     
-    # 时间滑块
-    ax_slider = plt.axes([0.15, 0.10, 0.55, 0.025], facecolor='lightgray')
-    slider = Slider(ax_slider, 'Time Step', 0, max(1, len(timesteps)-1), 
-                   valinit=max(0, len(timesteps)-1), valstep=1, color='teal')
+    # 时间范围滑块 (开始和结束)
+    ax_start = plt.axes([0.15, 0.12, 0.55, 0.020], facecolor='lightgray')
+    slider_start = Slider(ax_start, 'Start Step', 0, max(1, len(timesteps)-1), 
+                         valinit=0, valstep=1, color='blue')
+    
+    ax_end = plt.axes([0.15, 0.09, 0.55, 0.020], facecolor='lightgray')
+    slider_end = Slider(ax_end, 'End Step', 0, max(1, len(timesteps)-1), 
+                       valinit=max(0, len(timesteps)-1), valstep=1, color='teal')
     
     # 平滑窗口滑块
-    ax_smooth = plt.axes([0.15, 0.06, 0.35, 0.025], facecolor='lightgray')
-    smooth_slider = Slider(ax_smooth, 'Smooth Window', 3, 51, 
+    ax_smooth = plt.axes([0.15, 0.05, 0.35, 0.020], facecolor='lightgray')
+    smooth_slider = Slider(ax_smooth, 'Smooth', 3, 51, 
                           valinit=11, valstep=2, color='orange')
     
-    # 多项式阶数滑块
-    ax_poly = plt.axes([0.55, 0.06, 0.15, 0.025], facecolor='lightgray')
-    poly_slider = Slider(ax_poly, 'Poly Order', 1, 5, 
+    # 多项式阶数滑块  
+    ax_poly = plt.axes([0.55, 0.05, 0.15, 0.020], facecolor='lightgray')
+    poly_slider = Slider(ax_poly, 'Poly', 1, 5, 
                         valinit=3, valstep=1, color='green')
     
     # 反应选择复选框
@@ -207,8 +211,15 @@ def plot_per_reaction_spectrum(filename='results/spectrum_halpha_cumulative.dat'
     
     def update(val=None):
         """更新所有曲线"""
-        idx = int(slider.val)
-        end_timestep = timesteps[idx]
+        start_idx = int(slider_start.val)
+        end_idx = int(slider_end.val)
+        
+        # 确保 start <= end
+        if start_idx > end_idx:
+            start_idx, end_idx = end_idx, start_idx
+        
+        start_timestep = timesteps[start_idx]
+        end_timestep = timesteps[end_idx]
         
         # 获取平滑参数
         window = int(smooth_slider.val)
@@ -219,8 +230,8 @@ def plot_per_reaction_spectrum(filename='results/spectrum_halpha_cumulative.dat'
         if window <= polyorder:
             window = polyorder + 2
         
-        # 筛选时间步 <= end_timestep 的数据
-        df_subset = df[df['timestep'] <= end_timestep]
+        # 筛选时间范围内的数据 (start_timestep <= t <= end_timestep)
+        df_subset = df[(df['timestep'] >= start_timestep) & (df['timestep'] <= end_timestep)]
         
         total_counts = np.zeros(len(wavelengths))
         
@@ -274,7 +285,7 @@ def plot_per_reaction_spectrum(filename='results/spectrum_halpha_cumulative.dat'
         line_total.set_ydata(total_smooth)
         line_total.set_visible(selected.get('total', True))
         
-        ax.set_title(f'Hα Spectrum (up to step {end_timestep})', fontsize=14, fontweight='bold')
+        ax.set_title(f'Hα Spectrum (step {start_timestep} - {end_timestep})', fontsize=14, fontweight='bold')
         fig.canvas.draw_idle()
     
     def toggle_reaction(label):
@@ -297,7 +308,8 @@ def plot_per_reaction_spectrum(filename='results/spectrum_halpha_cumulative.dat'
         ax.set_ylim(-0.02 * cur_max, cur_max * 1.1)
         fig.canvas.draw_idle()
     
-    slider.on_changed(update)
+    slider_start.on_changed(update)
+    slider_end.on_changed(update)
     smooth_slider.on_changed(update)
     poly_slider.on_changed(update)
     check.on_clicked(toggle_reaction)
@@ -309,9 +321,11 @@ def plot_per_reaction_spectrum(filename='results/spectrum_halpha_cumulative.dat'
     
     print("\n✓ 交互式按反应通道光谱图已创建")
     print("  滑块说明：")
-    print("    Time Step      - 选择累积时间范围")
-    print("    Smooth Window  - Savgol滤波窗口大小 (3-51)")
-    print("    Poly Order     - 多项式阶数 (1-5)")
+    print("    Start Step - 时间范围起点 (蓝色)")
+    print("    End Step   - 时间范围终点 (青色)")
+    print("    Smooth     - Savgol平滑窗口大小")
+    print("    Poly       - 多项式阶数")
+    print("  提示: 只分析稳态可将 Start Step 调到后半段")
     print("  右侧复选框：勾选/取消对应反应通道")
     plt.show()
 
