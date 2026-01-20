@@ -2571,16 +2571,21 @@ MODULE initialization
 
       ! ========== Initialize Spectral Diagnostics Arrays ==========
       IF (BOOL_SPECTRAL_DIAGNOSTICS) THEN
-         ALLOCATE(SPECTRAL_HISTOGRAM(N_SPECTRAL_BINS))
+         ! Count Hα-producing reactions
+         N_HALPHA_REACTIONS = 0
+         DO i = 1, N_REACTIONS
+            IF (REACTIONS(i)%PRODUCES_HALPHA) N_HALPHA_REACTIONS = N_HALPHA_REACTIONS + 1
+         END DO
+         
+         ! Allocate 2D histogram: (reaction_id, wavelength_bin)
+         ALLOCATE(SPECTRAL_HISTOGRAM(N_REACTIONS, N_SPECTRAL_BINS))
+         ALLOCATE(SPECTRAL_TOTAL_EVENTS(N_REACTIONS))
          SPECTRAL_HISTOGRAM = 0
          SPECTRAL_TOTAL_EVENTS = 0
          
-         ! Initialize delayed emission tracking (efficiency optimization)
-         ALLOCATE(EXCITED_HALPHA_INDICES(1000))  ! Initial size, will auto-expand
-         N_EXCITED_HALPHA = 0
-         
          IF (PROC_ID == 0) THEN
-            WRITE(*,*) '  Spectral diagnostics enabled (with delayed emission physics)'
+            WRITE(*,*) '  Spectral diagnostics enabled (per-reaction channel)'
+            WRITE(*,*) '    Hα-producing reactions:', N_HALPHA_REACTIONS
             WRITE(*,*) '    Bins:', N_SPECTRAL_BINS
             WRITE(*,*) '    vLOS range [m/s]:', SPECTRAL_VLOS_MIN, 'to', SPECTRAL_VLOS_MAX
             WRITE(*,*) '    Sampling rate:', SPECTRAL_SAMPLING_RATE

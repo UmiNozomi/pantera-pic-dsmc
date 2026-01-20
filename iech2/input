@@ -93,13 +93,11 @@ Bool_spectral_diagnostics:
 
 Spectral_sampling_rate:
     1.0
-Spectral_background_fraction:
-        0.1
 N_spectral_bins: ! 光谱分辨率（波长点数）Resolution: 200=低, 500=中, 1000=高
     1000          ! 推荐: 500-1000 for higher resolution
 
 Spectral_LOS_direction: ! 观测方向 (X, Y, Z)，会自动归一化
-    1.0 0.5 0.0         ! Z轴(默认)。其他例子: X轴=(1,0,0), Y轴=(0,1,0), 对角线=(1,1,1)
+    1.0 0.0 0.0         ! Z轴(默认)。其他例子: X轴=(1,0,0), Y轴=(0,1,0), 对角线=(1,1,1)
 
 Bool_reaction_statistics:
     .TRUE.

@@ -2033,33 +2033,29 @@ MODULE postprocess
       USE mpi_common
       
       IMPLICIT NONE
-      
       INTEGER, INTENT(IN) :: tID
-      CHARACTER(LEN=256) :: filename
-      INTEGER :: i, unit_num
+      
+      INTEGER :: i, jr, unit_num
+      CHARACTER(LEN=512) :: filename
       REAL(KIND=8) :: vLOS, wavelength, lambda0
-      INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: GLOBAL_HISTOGRAM
-      INTEGER(KIND=8) :: GLOBAL_TOTAL_EVENTS
+      INTEGER(KIND=8), DIMENSION(:,:), ALLOCATABLE :: GLOBAL_HISTOGRAM
+      INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: GLOBAL_TOTAL_EVENTS
       LOGICAL :: file_exists
-      CHARACTER(LEN=20) :: fmt_string
       
       lambda0 = 656.28D-9  ! Hα wavelength in m
       
-      ! MPI Reduce: collect histogram from all processes to rank 0
-      IF (PROC_ID .EQ. 0) THEN
-         ALLOCATE(GLOBAL_HISTOGRAM(N_SPECTRAL_BINS))
-      ELSE
-         ALLOCATE(GLOBAL_HISTOGRAM(N_SPECTRAL_BINS))
-      END IF
+      ! MPI Reduce: collect 2D histogram from all processes to rank 0
+      ALLOCATE(GLOBAL_HISTOGRAM(N_REACTIONS, N_SPECTRAL_BINS))
+      ALLOCATE(GLOBAL_TOTAL_EVENTS(N_REACTIONS))
       
-      CALL MPI_REDUCE(SPECTRAL_HISTOGRAM, GLOBAL_HISTOGRAM, N_SPECTRAL_BINS, &
+      CALL MPI_REDUCE(SPECTRAL_HISTOGRAM, GLOBAL_HISTOGRAM, N_REACTIONS * N_SPECTRAL_BINS, &
                       MPI_INTEGER8, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-      CALL MPI_REDUCE(SPECTRAL_TOTAL_EVENTS, GLOBAL_TOTAL_EVENTS, 1, &
+      CALL MPI_REDUCE(SPECTRAL_TOTAL_EVENTS, GLOBAL_TOTAL_EVENTS, N_REACTIONS, &
                       MPI_INTEGER8, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
       
       ! Only rank 0 writes output
       IF (PROC_ID .EQ. 0) THEN
-         ! Use a single cumulative file in matrix format
+         ! Use a single cumulative file with reaction ID column
          WRITE(filename, '(A,A)') TRIM(FLOWFIELD_SAVE_PATH), 'spectrum_halpha_cumulative.dat'
          
          ! Check if file exists to determine if we need to write header
@@ -2072,13 +2068,12 @@ MODULE postprocess
             OPEN(unit_num, FILE=TRIM(filename), STATUS='REPLACE')
             
             ! Write comment header
-            WRITE(unit_num, '(A)') '# Halpha cumulative spectrum - Matrix format'
-            WRITE(unit_num, '(A)') '# First row: wavelengths [nm]'
-            WRITE(unit_num, '(A)') '# First column: timestep'
-            WRITE(unit_num, '(A)') '# Data: emission counts at each wavelength and timestep'
+            WRITE(unit_num, '(A)') '# Halpha spectrum by reaction channel - Matrix format'
+            WRITE(unit_num, '(A)') '# Columns: timestep, reaction_id, lambda_1, lambda_2, ...'
+            WRITE(unit_num, '(A)') '# Each row = one reaction channel at one timestep'
             
-            ! Write wavelength header row: "timestep  λ1  λ2  λ3  ..."
-            WRITE(unit_num, '(A10)', ADVANCE='NO') 'timestep'
+            ! Write wavelength header row: "timestep  reaction_id  λ1  λ2  λ3  ..."
+            WRITE(unit_num, '(A10,2X,A12)', ADVANCE='NO') 'timestep', 'reaction_id'
             DO i = 1, N_SPECTRAL_BINS
                vLOS = SPECTRAL_VLOS_MIN + (i-0.5d0)*(SPECTRAL_VLOS_MAX-SPECTRAL_VLOS_MIN)/N_SPECTRAL_BINS
                wavelength = lambda0 * (1.d0 + vLOS/2.998d8) * 1.d9  ! Doppler shift, convert to nm
@@ -2089,25 +2084,34 @@ MODULE postprocess
             CLOSE(unit_num)
          END IF
          
-         ! Append data row: "timestep  count1  count2  count3  ..."
+         ! Append data rows: one row per Hα-producing reaction
          OPEN(unit_num, FILE=TRIM(filename), STATUS='OLD', POSITION='APPEND')
          
-         ! Write timestep in first column
-         WRITE(unit_num, '(I10)', ADVANCE='NO') tID
-         
-         ! Write counts for all wavelength bins
-         DO i = 1, N_SPECTRAL_BINS
-            WRITE(unit_num, '(2X,I10)', ADVANCE='NO') GLOBAL_HISTOGRAM(i)
+         DO jr = 1, N_REACTIONS
+            ! Only write rows for reactions that produce Hα AND have events
+            IF (REACTIONS(jr)%PRODUCES_HALPHA) THEN
+               IF (GLOBAL_TOTAL_EVENTS(jr) > 0) THEN
+                  ! Write timestep and reaction_id
+                  WRITE(unit_num, '(I10,2X,I12)', ADVANCE='NO') tID, jr
+                  
+                  ! Write counts for all wavelength bins
+                  DO i = 1, N_SPECTRAL_BINS
+                     WRITE(unit_num, '(2X,I10)', ADVANCE='NO') GLOBAL_HISTOGRAM(jr, i)
+                  END DO
+                  WRITE(unit_num, *)  ! New line after data row
+               END IF
+            END IF
          END DO
-         WRITE(unit_num, *)  ! New line after data row
          
          CLOSE(unit_num)
          
-         IF (PROC_ID .EQ. 0) WRITE(*,'(A,I8,A,I12,A)') '  Appended Halpha spectrum at timestep ', tID, &
-                                                       ' (', GLOBAL_TOTAL_EVENTS, ' events) to matrix file'
+         ! Print summary
+         WRITE(*,'(A,I8,A,I3,A)') '  Appended Halpha spectrum at timestep ', tID, &
+                                  ' (', COUNT(GLOBAL_TOTAL_EVENTS > 0), ' active reaction channels)'
       END IF
       
       DEALLOCATE(GLOBAL_HISTOGRAM)
+      DEALLOCATE(GLOBAL_TOTAL_EVENTS)
       
       ! Reset histogram for next output period
       SPECTRAL_HISTOGRAM = 0

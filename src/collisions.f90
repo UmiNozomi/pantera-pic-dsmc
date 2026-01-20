@@ -1642,6 +1642,7 @@ MODULE collisions
       ! Spectral diagnostics variables
       REAL(KIND=8) :: vLOS
       INTEGER :: EMITTER_ID, JC
+      INTEGER :: H_COUNT, H_PRODUCT_IDS(4), SELECTED_H_IDX, SELECTED_PRODUCT
 
       PI2 = 2*PI
 
@@ -1917,33 +1918,66 @@ MODULE collisions
                   ! If this pair had a chemical reaction, exit and don't test any other reaction.
                   HAS_REACTED = .TRUE.
                   
-                  ! ========== Spectral Diagnostics: Mark H* excited particles for delayed emission ==========
+                  ! ========== Spectral Diagnostics: Record Hα emission by reaction channel ==========
                   IF (REACTIONS(JR)%PRODUCES_HALPHA .AND. BOOL_SPECTRAL_DIAGNOSTICS) THEN
                      ! Random sampling to reduce computational cost
                      IF (rf() < SPECTRAL_SAMPLING_RATE) THEN
                         ! Find the emitting particle (H atom)
+                        ! If multiple H atoms are produced, randomly select one
                         EMITTER_ID = -1
-                        IF (REACTIONS(JR)%EMITTING_PRODUCT_ID == 1) EMITTER_ID = JP1
-                        IF (REACTIONS(JR)%EMITTING_PRODUCT_ID == 2) EMITTER_ID = JP2
-                        IF (REACTIONS(JR)%N_PROD .GE. 3 .AND. REACTIONS(JR)%EMITTING_PRODUCT_ID == 3) THEN
-                           ! Product 3 was just created and is at the end of particle array
-                           EMITTER_ID = NP_PROC
+                        
+                        ! Count H atoms in products for random selection
+                        H_COUNT = 0
+                        H_PRODUCT_IDS(1:4) = -1  ! Reset
+                        
+                        IF (REACTIONS(JR)%P1_SP_ID > 0) THEN
+                           IF (SPECIES(REACTIONS(JR)%P1_SP_ID)%NAME == 'H') THEN
+                              H_COUNT = H_COUNT + 1
+                              H_PRODUCT_IDS(H_COUNT) = 1
+                           END IF
                         END IF
-                        ! Note: Product 4 similar handling would go here if needed
+                        IF (REACTIONS(JR)%N_PROD >= 2 .AND. REACTIONS(JR)%P2_SP_ID > 0) THEN
+                           IF (SPECIES(REACTIONS(JR)%P2_SP_ID)%NAME == 'H') THEN
+                              H_COUNT = H_COUNT + 1
+                              H_PRODUCT_IDS(H_COUNT) = 2
+                           END IF
+                        END IF
+                        IF (REACTIONS(JR)%N_PROD >= 3 .AND. REACTIONS(JR)%P3_SP_ID > 0) THEN
+                           IF (SPECIES(REACTIONS(JR)%P3_SP_ID)%NAME == 'H') THEN
+                              H_COUNT = H_COUNT + 1
+                              H_PRODUCT_IDS(H_COUNT) = 3
+                           END IF
+                        END IF
+                        IF (REACTIONS(JR)%N_PROD >= 4 .AND. REACTIONS(JR)%P4_SP_ID > 0) THEN
+                           IF (SPECIES(REACTIONS(JR)%P4_SP_ID)%NAME == 'H') THEN
+                              H_COUNT = H_COUNT + 1
+                              H_PRODUCT_IDS(H_COUNT) = 4
+                           END IF
+                        END IF
+                        
+                        ! Randomly select which H atom to track
+                        IF (H_COUNT > 0) THEN
+                           SELECTED_H_IDX = INT(rf() * H_COUNT) + 1
+                           IF (SELECTED_H_IDX > H_COUNT) SELECTED_H_IDX = H_COUNT
+                           SELECTED_PRODUCT = H_PRODUCT_IDS(SELECTED_H_IDX)
+                           
+                           ! Map product ID to particle index
+                           IF (SELECTED_PRODUCT == 1) EMITTER_ID = JP1
+                           IF (SELECTED_PRODUCT == 2) EMITTER_ID = JP2
+                           IF (SELECTED_PRODUCT == 3) EMITTER_ID = NP_PROC  ! Product 3 just created
+                           IF (SELECTED_PRODUCT == 4 .AND. REACTIONS(JR)%N_PROD >= 4) THEN
+                              EMITTER_ID = NP_PROC  ! Product 4 if exists
+                           END IF
+                        END IF
                         
                         IF (EMITTER_ID > 0 .AND. EMITTER_ID <= NP_PROC) THEN
-                           ! Mark particle as excited (H* n=3 state)
-                           ! Do NOT record velocity yet - will record at emission time (15.6 ns later)
-                           particles(EMITTER_ID)%IS_EXCITED_HALPHA = .TRUE.
-                           particles(EMITTER_ID)%EXCITATION_TIME = DBLE(tID) * DT
+                           ! Compute line-of-sight velocity component
+                           vLOS = particles(EMITTER_ID)%VX * SPECTRAL_LOS_DIRECTION(1) + &
+                                  particles(EMITTER_ID)%VY * SPECTRAL_LOS_DIRECTION(2) + &
+                                  particles(EMITTER_ID)%VZ * SPECTRAL_LOS_DIRECTION(3)
                            
-                           ! Add to efficient tracking list
-                           N_EXCITED_HALPHA = N_EXCITED_HALPHA + 1
-                           IF (N_EXCITED_HALPHA > SIZE(EXCITED_HALPHA_INDICES)) THEN
-                              ! Expand tracking array if needed (rare)
-                              CALL EXPAND_EXCITED_INDICES_ARRAY
-                           END IF
-                           EXCITED_HALPHA_INDICES(N_EXCITED_HALPHA) = EMITTER_ID
+                           ! Accumulate to per-reaction histogram
+                           CALL ACCUMULATE_SPECTRAL_EVENT_BY_REACTION(JR, vLOS)
                         END IF
                      END IF
                   END IF
@@ -1972,127 +2006,30 @@ MODULE collisions
    ! SUBROUTINE ACCUMULATE_SPECTRAL_EVENT - Accumulate Halpha emission to histogram !
    ! Phenomenological model with background emission fraction                        !
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   SUBROUTINE ACCUMULATE_SPECTRAL_EVENT(vLOS)
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! SUBROUTINE ACCUMULATE_SPECTRAL_EVENT_BY_REACTION                             !!!
+   ! Accumulates Hα spectral events indexed by reaction channel                   !!!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   
+   SUBROUTINE ACCUMULATE_SPECTRAL_EVENT_BY_REACTION(reaction_id, vLOS)
       IMPLICIT NONE
+      INTEGER, INTENT(IN) :: reaction_id
       REAL(KIND=8), INTENT(IN) :: vLOS
       INTEGER :: bin_index
-      REAL(KIND=8) :: vLOS_effective, v_thermal_std, T_emitter, m_H
       
-      ! Background temperature and mass
-      T_emitter = MCC_BG_TTRA         ! K, temperature
-      m_H = 1.6737236d-27             ! kg, hydrogen atom mass
-      v_thermal_std = SQRT(kB * T_emitter / m_H)
-      
-      ! === Phenomenological dual-channel model ===
-      ! Channel 1: "Background emission" - models e- + H_cold excitation (missing from reactions)
-      ! Channel 2: "Fast emission" - real H + H2 collision excitation (from simulation)
-      
-      IF (rf() < SPECTRAL_BACKGROUND_FRACTION) THEN
-         ! ===== BACKGROUND CHANNEL (Central Peak) =====
-         ! Phenomenological: assumes cold H atoms excited by electrons
-         ! Velocity is purely thermal (centered at 0)
-         vLOS_effective = v_thermal_std * GAUSSIAN_RANDOM()
-         
-      ELSE
-         ! ===== FAST CHANNEL (Doppler Wings) =====
-         ! Real simulation: H atoms excited by H2 collisions (high energy)
-         ! Use nascent velocity + thermal jitter
-         vLOS_effective = vLOS + v_thermal_std * GAUSSIAN_RANDOM()
-      END IF
-      
-      ! Compute bin index
-      bin_index = INT((vLOS_effective - SPECTRAL_VLOS_MIN) / &
+      ! Compute bin index from line-of-sight velocity
+      bin_index = INT((vLOS - SPECTRAL_VLOS_MIN) / &
                       (SPECTRAL_VLOS_MAX - SPECTRAL_VLOS_MIN) * N_SPECTRAL_BINS) + 1
       
-      ! Check if within range and accumulate
+      ! Check if within range and accumulate to per-reaction histogram
       IF (bin_index >= 1 .AND. bin_index <= N_SPECTRAL_BINS) THEN
-         SPECTRAL_HISTOGRAM(bin_index) = SPECTRAL_HISTOGRAM(bin_index) + 1
-         SPECTRAL_TOTAL_EVENTS = SPECTRAL_TOTAL_EVENTS + 1
+         IF (reaction_id >= 1 .AND. reaction_id <= N_REACTIONS) THEN
+            SPECTRAL_HISTOGRAM(reaction_id, bin_index) = SPECTRAL_HISTOGRAM(reaction_id, bin_index) + 1
+            SPECTRAL_TOTAL_EVENTS(reaction_id) = SPECTRAL_TOTAL_EVENTS(reaction_id) + 1
+         END IF
       END IF
       
-   END SUBROUTINE ACCUMULATE_SPECTRAL_EVENT
-
-
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   ! SUBROUTINE PROCESS_DELAYED_HALPHA_EMISSION                                   !!!
-   ! Processes excited H*(n=3) particles for delayed emission (tau = 15.6 ns)     !!!
-   ! Uses efficient index-based tracking for O(N_excited) instead of O(N_all)    !!!
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   
-   SUBROUTINE PROCESS_DELAYED_HALPHA_EMISSION
-      IMPLICIT NONE
-      INTEGER :: I, JP, new_count
-      REAL(KIND=8) :: elapsed_time, decay_prob, vLOS
-      REAL(KIND=8), PARAMETER :: TAU_HALPHA = 15.6d-9  ! Natural lifetime [s]
-      INTEGER, DIMENSION(:), ALLOCATABLE :: temp_indices
-      
-      IF (N_EXCITED_HALPHA == 0) RETURN  ! No excited particles to process
-      
-      ! Process only excited particles (efficiency optimization)
-      new_count = 0
-      DO I = 1, N_EXCITED_HALPHA
-         JP = EXCITED_HALPHA_INDICES(I)
-         
-         ! Safety check: particle still exists and is excited
-         IF (JP < 1 .OR. JP > NP_PROC) CYCLE
-         IF (.NOT. particles(JP)%IS_EXCITED_HALPHA) CYCLE
-         
-         ! Calculate time since excitation
-         elapsed_time = DBLE(tID) * DT - particles(JP)%EXCITATION_TIME
-         
-         ! Probability of emission in this timestep: P = 1 - exp(-dt/tau)
-         decay_prob = 1.0d0 - EXP(-DT / TAU_HALPHA)
-         
-         IF (rf() < decay_prob) THEN
-            ! Particle emits NOW - record CURRENT velocity (after thermalization)
-            vLOS = particles(JP)%VX * SPECTRAL_LOS_DIRECTION(1) + &
-                   particles(JP)%VY * SPECTRAL_LOS_DIRECTION(2) + &
-                   particles(JP)%VZ * SPECTRAL_LOS_DIRECTION(3)
-            
-            CALL ACCUMULATE_SPECTRAL_EVENT(vLOS)
-            
-            ! Reset excited state flag
-            particles(JP)%IS_EXCITED_HALPHA = .FALSE.
-            particles(JP)%EXCITATION_TIME = 0.d0
-         ELSE
-            ! Particle still excited - keep in list
-            new_count = new_count + 1
-            EXCITED_HALPHA_INDICES(new_count) = JP
-         END IF
-      END DO
-      
-      ! Update count (compaction: removed emitted particles from list)
-      N_EXCITED_HALPHA = new_count
-      
-   END SUBROUTINE PROCESS_DELAYED_HALPHA_EMISSION
-
-
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   ! SUBROUTINE EXPAND_EXCITED_INDICES_ARRAY                                      !!!
-   ! Expands the tracking array when it becomes full (rare operation)            !!!
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   
-   SUBROUTINE EXPAND_EXCITED_INDICES_ARRAY
-      IMPLICIT NONE
-      INTEGER, DIMENSION(:), ALLOCATABLE :: temp_array
-      INTEGER :: old_size, new_size
-      
-      old_size = SIZE(EXCITED_HALPHA_INDICES)
-      new_size = old_size * 2  ! Double the size
-      
-      ! Backup current data
-      ALLOCATE(temp_array(old_size))
-      temp_array = EXCITED_HALPHA_INDICES
-      
-      ! Reallocate to larger size
-      DEALLOCATE(EXCITED_HALPHA_INDICES)
-      ALLOCATE(EXCITED_HALPHA_INDICES(new_size))
-      
-      ! Restore data
-      EXCITED_HALPHA_INDICES(1:old_size) = temp_array
-      DEALLOCATE(temp_array)
-      
-   END SUBROUTINE EXPAND_EXCITED_INDICES_ARRAY
+   END SUBROUTINE ACCUMULATE_SPECTRAL_EVENT_BY_REACTION
 
 
 END MODULE collisions

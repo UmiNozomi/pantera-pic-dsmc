@@ -453,13 +453,12 @@ MODULE global
    REAL(KIND=8) :: SPECTRAL_VLOS_MIN = -2.3D6  ! m/s (corresponds to ~-5 nm from Hα center)
    REAL(KIND=8) :: SPECTRAL_VLOS_MAX = +2.3D6  ! m/s (corresponds to ~+5 nm from Hα center)
    REAL(KIND=8), DIMENSION(3) :: SPECTRAL_LOS_DIRECTION = (/0.d0, 0.d0, 1.d0/)  ! Default: Z direction
-   REAL(KIND=8) :: SPECTRAL_BACKGROUND_FRACTION = 0.0D0  ! Fraction of "background emission" (0.0-1.0)
-   INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: SPECTRAL_HISTOGRAM  ! Velocity histogram
-   INTEGER(KIND=8) :: SPECTRAL_TOTAL_EVENTS = 0
+   REAL(KIND=8) :: SPECTRAL_BACKGROUND_FRACTION = 0.0D0  ! (unused, kept for compatibility)
    
-   ! Delayed Hα emission tracking (efficiency optimization)
-   INTEGER, DIMENSION(:), ALLOCATABLE :: EXCITED_HALPHA_INDICES  ! Indices of excited particles
-   INTEGER :: N_EXCITED_HALPHA = 0  ! Number of currently excited particles
+   ! Per-reaction spectral histogram: (reaction_id, wavelength_bin)
+   INTEGER(KIND=8), DIMENSION(:,:), ALLOCATABLE :: SPECTRAL_HISTOGRAM  ! (N_REACTIONS, N_SPECTRAL_BINS)
+   INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: SPECTRAL_TOTAL_EVENTS ! Per-reaction event counts
+   INTEGER :: N_HALPHA_REACTIONS = 0  ! Number of reactions that produce Hα
    
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    !!!!!!!!! Reaction Statistics for VTK Output !!!!!!!!!!!!!!!!!!
