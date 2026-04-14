@@ -442,7 +442,19 @@ MODULE postprocess
       REAL(KIND=8), DIMENSION(NX+1)      :: XNODES
       REAL(KIND=8), DIMENSION(NY+1)      :: YNODES
 
-      INTEGER                            :: I, JS, FIRST, LAST, JPROC, MOM
+      INTEGER                            :: I, JS, FIRST, LAST, JPROC, MOM, JR
+      REAL(KIND=8)                       :: SAMPLING_TIME, VOL_CELL, TOTAL_SAMPLING_TIME
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: REACTION_RATE_DENSITY
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: REACTION_RATE_CUM_DENSITY
+      INTEGER, DIMENSION(:), ALLOCATABLE :: REACTION_COUNT_CUM
+      ! Analytical D-D fusion rate variables
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: ANALYTICAL_DD_RATE
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: ANALYTICAL_DD_RATE_SP
+      REAL(KIND=8)                       :: NRHO_CELL, T_CELL, T_EFF, T_KEV
+      REAL(KIND=8)                       :: SIGMAV, M_BEAM, M_BG, N_BG_NUCLEONS
+      INTEGER                            :: NUCLEON_FACTOR, SP_BG_ID
+      INTEGER                            :: N_VTK_FIELDS, N_DD_SPECIES
+      LOGICAL                            :: BOOL_ANALYTICAL
 
       INTEGER, DIMENSION(:), ALLOCATABLE :: CELL_PROC_ID
 
@@ -455,6 +467,14 @@ MODULE postprocess
                         'Qyzz_  ', 'Qzzz_  ', 'Qxxz_  ', 'Qxzz_  ', 'Qxyz_  ', &
                         'Riijj_ ', 'Rxxjj_ ', 'Rxyjj_ ', 'Rxzjj_ ', 'Ryyjj_ ', 'Ryzjj_ ', 'Rzzjj_ ', &
                         'Sxiijj_', 'Syiijj_', 'Sziijj_']
+
+
+      IF (BOOL_REACTION_STATISTICS .AND. ALLOCATED(REACTION_CELL_COUNTS)) THEN
+         CALL MPI_REDUCE(REACTION_CELL_COUNTS, REACTION_CELL_COUNTS_GLOBAL, &
+                        N_REACTIONS*NCELLS, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+         CALL MPI_REDUCE(REACTION_CELL_COUNTS_CUM, REACTION_CELL_COUNTS_CUM_GLOBAL, &
+                        N_REACTIONS*NCELLS, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      END IF
 
       IF (PROC_ID .EQ. 0) THEN
          IF (GRID_TYPE == RECTILINEAR_UNIFORM) THEN
@@ -571,11 +591,22 @@ MODULE postprocess
             END IF
 
             WRITE(54321) 'CELL_DATA '//ITOA(NCELLS)//ACHAR(10)
-            IF (BOOL_DUMP_MOMENTS) THEN
-               WRITE(54321) 'FIELD FieldData '//ITOA( (13+33)*N_SPECIES+1 )//ACHAR(10)
-            ELSE
-               WRITE(54321) 'FIELD FieldData '//ITOA( 13*N_SPECIES+1 )//ACHAR(10)
+            ! Calculate number of fields for binary output
+            BOOL_ANALYTICAL = (COLLISION_TYPE == MCC_VAHEDI .OR. COLLISION_TYPE == MCC)
+            ! Count deuterium-containing species for per-species analytical rates
+            N_DD_SPECIES = 0
+            IF (BOOL_ANALYTICAL) THEN
+               DO JS = 1, N_SPECIES
+                  IF (NINT(SPECIES(JS)%MOLECULAR_MASS / 3.344D-27) >= 1) &
+                     N_DD_SPECIES = N_DD_SPECIES + 1
+               END DO
             END IF
+            N_VTK_FIELDS = 13 * N_SPECIES + 1
+            IF (BOOL_DUMP_MOMENTS) N_VTK_FIELDS = N_VTK_FIELDS + 33 * N_SPECIES
+            IF (BOOL_REACTION_STATISTICS .AND. ALLOCATED(REACTION_CELL_COUNTS)) &
+               N_VTK_FIELDS = N_VTK_FIELDS + 3*N_REACTIONS
+            IF (BOOL_ANALYTICAL) N_VTK_FIELDS = N_VTK_FIELDS + N_DD_SPECIES + 1
+            WRITE(54321) 'FIELD FieldData '//ITOA(N_VTK_FIELDS)//ACHAR(10)
 
 
             ! Write per-cell value
@@ -674,6 +705,118 @@ MODULE postprocess
          
          
             END DO
+
+            ! ========== Reaction Statistics Output (Binary) ==========
+            IF (BOOL_REACTION_STATISTICS .AND. ALLOCATED(REACTION_CELL_COUNTS)) THEN
+               SAMPLING_TIME = DBLE(AVG_CUMULATED) * DBLE(DUMP_GRID_AVG_EVERY) * DT
+               IF (SAMPLING_TIME <= 0.0D0) SAMPLING_TIME = DT
+               TOTAL_SAMPLING_TIME = DBLE(MAX(tID, 1)) * DT
+               
+               ALLOCATE(REACTION_RATE_DENSITY(NCELLS))
+               ALLOCATE(REACTION_RATE_CUM_DENSITY(NCELLS))
+               ALLOCATE(REACTION_COUNT_CUM(NCELLS))
+               
+               DO JR = 1, N_REACTIONS
+                  DO I = 1, NCELLS
+                     IF (GRID_TYPE == RECTILINEAR_UNIFORM .AND. .NOT. AXI) THEN
+                        VOL_CELL = CELL_VOL
+                     ELSE IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
+                        VOL_CELL = CELL_VOLUMES(I)
+                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
+                        VOL_CELL = U1D_GRID%CELL_VOLUMES(I)
+                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
+                        VOL_CELL = U2D_GRID%CELL_VOLUMES(I)
+                     ELSE
+                        VOL_CELL = CELL_VOL
+                     END IF
+                     
+                     REACTION_COUNT_CUM(I) = REACTION_CELL_COUNTS_CUM_GLOBAL(JR, I)
+                     IF (VOL_CELL > 0.0D0) THEN
+                        REACTION_RATE_DENSITY(I) = FNUM * DBLE(REACTION_CELL_COUNTS_GLOBAL(JR, I)) &
+                                                   / (VOL_CELL * SAMPLING_TIME)
+                        REACTION_RATE_CUM_DENSITY(I) = FNUM * DBLE(REACTION_CELL_COUNTS_CUM_GLOBAL(JR, I)) &
+                                                       / (VOL_CELL * TOTAL_SAMPLING_TIME)
+                     ELSE
+                        REACTION_RATE_DENSITY(I) = 0.0D0
+                        REACTION_RATE_CUM_DENSITY(I) = 0.0D0
+                     END IF
+                  END DO
+                  
+                  WRITE(string, '(A,I0)') 'reaction_rate_R', JR
+                  WRITE(54321) TRIM(string)//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) REACTION_RATE_DENSITY, ACHAR(10)
+
+                  WRITE(string, '(A,I0)') 'reaction_count_cum_R', JR
+                  WRITE(54321) TRIM(string)//' '//ITOA(1)//' '//ITOA(NCELLS)//' integer'//ACHAR(10)
+                  WRITE(54321) REACTION_COUNT_CUM, ACHAR(10)
+
+                  WRITE(string, '(A,I0)') 'reaction_rate_cum_R', JR
+                  WRITE(54321) TRIM(string)//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) REACTION_RATE_CUM_DENSITY, ACHAR(10)
+               END DO
+               
+               DEALLOCATE(REACTION_RATE_DENSITY)
+               DEALLOCATE(REACTION_RATE_CUM_DENSITY)
+               DEALLOCATE(REACTION_COUNT_CUM)
+            END IF
+            ! ========================================================================
+
+            ! ========== Analytical D-D Fusion Rate Density (Binary) [reactions/(m³·s)] ==========
+            IF (BOOL_ANALYTICAL) THEN
+               ALLOCATE(ANALYTICAL_DD_RATE(NCELLS))
+               ALLOCATE(ANALYTICAL_DD_RATE_SP(NCELLS))
+               ANALYTICAL_DD_RATE = 0.0D0
+               SP_BG_ID = MIXTURES(MCC_BG_MIX)%COMPONENTS(1)%ID
+               M_BG = SPECIES(SP_BG_ID)%MOLECULAR_MASS
+               N_BG_NUCLEONS = MCC_BG_DENS * NINT(M_BG / 3.344D-27)
+
+               DO JS = 1, N_SPECIES
+                  FIRST = 1 + (JS-1)*NCELLS
+                  LAST  = JS*NCELLS
+                  M_BEAM = SPECIES(JS)%MOLECULAR_MASS
+                  NUCLEON_FACTOR = NINT(M_BEAM / 3.344D-27)
+                  IF (NUCLEON_FACTOR < 1) CYCLE  ! skip electrons
+
+                  ANALYTICAL_DD_RATE_SP = 0.0D0
+                  DO I = 1, NCELLS
+                     IF (GRID_TYPE == RECTILINEAR_UNIFORM .AND. .NOT. AXI) THEN
+                        VOL_CELL = CELL_VOL
+                     ELSE IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
+                        VOL_CELL = CELL_VOLUMES(I)
+                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
+                        VOL_CELL = U1D_GRID%CELL_VOLUMES(I)
+                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
+                        VOL_CELL = U2D_GRID%CELL_VOLUMES(I)
+                     ELSE
+                        VOL_CELL = CELL_VOL
+                     END IF
+
+                     IF (VOL_CELL > 0.0D0 .AND. AVG_NP(FIRST+I-1) > 0.0D0) THEN
+                        NRHO_CELL = FNUM * AVG_NP(FIRST+I-1) / VOL_CELL
+                        T_CELL = AVG_TTR(FIRST+I-1)
+                        T_EFF = (M_BG * T_CELL + M_BEAM * MCC_BG_TTRA) / (M_BEAM + M_BG)
+                        T_KEV = T_EFF * 8.61733326D-8
+                        SIGMAV = BOSCH_HALE_DD_SIGMAV(T_KEV)
+                        ANALYTICAL_DD_RATE_SP(I) = NRHO_CELL * DBLE(NUCLEON_FACTOR) &
+                           * N_BG_NUCLEONS * SIGMAV
+                        ANALYTICAL_DD_RATE(I) = ANALYTICAL_DD_RATE(I) &
+                           + ANALYTICAL_DD_RATE_SP(I)
+                     END IF
+                  END DO
+
+                  ! Write per-species field
+                  WRITE(string, '(A,A)') 'dd_rate_', TRIM(SPECIES(JS)%NAME)
+                  WRITE(54321) TRIM(string)//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) ANALYTICAL_DD_RATE_SP, ACHAR(10)
+               END DO
+
+               ! Write total field
+               WRITE(54321) 'analytical_dd_rate'//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+               WRITE(54321) ANALYTICAL_DD_RATE, ACHAR(10)
+               DEALLOCATE(ANALYTICAL_DD_RATE)
+               DEALLOCATE(ANALYTICAL_DD_RATE_SP)
+            END IF
+            ! ========================================================================
 
             IF (PIC_TYPE .NE. NONE) THEN
                IF (GRID_TYPE == UNSTRUCTURED) THEN
@@ -836,11 +979,21 @@ MODULE postprocess
             END IF
             
             WRITE(54321,'(A,I10)') 'CELL_DATA', NCELLS
-            IF (BOOL_DUMP_MOMENTS) THEN
-               WRITE(54321,'(A,I10)') 'FIELD FieldData', (13+33)*N_SPECIES+1
-            ELSE
-               WRITE(54321,'(A,I10)') 'FIELD FieldData', 13*N_SPECIES+1
+            ! Calculate number of fields: base species fields + optional moments + optional reaction stats
+            BOOL_ANALYTICAL = (COLLISION_TYPE == MCC_VAHEDI .OR. COLLISION_TYPE == MCC)
+            N_DD_SPECIES = 0
+            IF (BOOL_ANALYTICAL) THEN
+               DO JS = 1, N_SPECIES
+                  IF (NINT(SPECIES(JS)%MOLECULAR_MASS / 3.344D-27) >= 1) &
+                     N_DD_SPECIES = N_DD_SPECIES + 1
+               END DO
             END IF
+            N_VTK_FIELDS = 13 * N_SPECIES + 1
+            IF (BOOL_DUMP_MOMENTS) N_VTK_FIELDS = N_VTK_FIELDS + 33 * N_SPECIES
+            IF (BOOL_REACTION_STATISTICS .AND. ALLOCATED(REACTION_CELL_COUNTS)) &
+               N_VTK_FIELDS = N_VTK_FIELDS + 3*N_REACTIONS
+            IF (BOOL_ANALYTICAL) N_VTK_FIELDS = N_VTK_FIELDS + N_DD_SPECIES + 1
+            WRITE(54321,'(A,I10)') 'FIELD FieldData', N_VTK_FIELDS
 
 
             ! Write per-cell value
@@ -939,6 +1092,118 @@ MODULE postprocess
          
          
             END DO
+
+            ! ========== Reaction Statistics Output ==========
+            IF (BOOL_REACTION_STATISTICS .AND. ALLOCATED(REACTION_CELL_COUNTS)) THEN
+               SAMPLING_TIME = DBLE(AVG_CUMULATED) * DBLE(DUMP_GRID_AVG_EVERY) * DT
+               IF (SAMPLING_TIME <= 0.0D0) SAMPLING_TIME = DT
+               TOTAL_SAMPLING_TIME = DBLE(MAX(tID, 1)) * DT
+               
+               ALLOCATE(REACTION_RATE_DENSITY(NCELLS))
+               ALLOCATE(REACTION_RATE_CUM_DENSITY(NCELLS))
+               ALLOCATE(REACTION_COUNT_CUM(NCELLS))
+               
+               DO JR = 1, N_REACTIONS
+                  DO I = 1, NCELLS
+                     IF (GRID_TYPE == RECTILINEAR_UNIFORM .AND. .NOT. AXI) THEN
+                        VOL_CELL = CELL_VOL
+                     ELSE IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
+                        VOL_CELL = CELL_VOLUMES(I)
+                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
+                        VOL_CELL = U1D_GRID%CELL_VOLUMES(I)
+                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
+                        VOL_CELL = U2D_GRID%CELL_VOLUMES(I)
+                     ELSE
+                        VOL_CELL = CELL_VOL
+                     END IF
+                     
+                     REACTION_COUNT_CUM(I) = REACTION_CELL_COUNTS_CUM_GLOBAL(JR, I)
+                     IF (VOL_CELL > 0.0D0) THEN
+                        REACTION_RATE_DENSITY(I) = FNUM * DBLE(REACTION_CELL_COUNTS_GLOBAL(JR, I)) &
+                                                   / (VOL_CELL * SAMPLING_TIME)
+                        REACTION_RATE_CUM_DENSITY(I) = FNUM * DBLE(REACTION_CELL_COUNTS_CUM_GLOBAL(JR, I)) &
+                                                       / (VOL_CELL * TOTAL_SAMPLING_TIME)
+                     ELSE
+                        REACTION_RATE_DENSITY(I) = 0.0D0
+                        REACTION_RATE_CUM_DENSITY(I) = 0.0D0
+                     END IF
+                  END DO
+                  
+                  WRITE(string, '(A,I0)') 'reaction_rate_R', JR
+                  WRITE(54321,'(A,I10,I10,A7)') TRIM(string), 1, NCELLS, 'double'
+                  WRITE(54321,*) REACTION_RATE_DENSITY
+
+                  WRITE(string, '(A,I0)') 'reaction_count_cum_R', JR
+                  WRITE(54321,'(A,I10,I10,A8)') TRIM(string), 1, NCELLS, 'integer'
+                  WRITE(54321,*) REACTION_COUNT_CUM
+
+                  WRITE(string, '(A,I0)') 'reaction_rate_cum_R', JR
+                  WRITE(54321,'(A,I10,I10,A7)') TRIM(string), 1, NCELLS, 'double'
+                  WRITE(54321,*) REACTION_RATE_CUM_DENSITY
+               END DO
+               
+               DEALLOCATE(REACTION_RATE_DENSITY)
+               DEALLOCATE(REACTION_RATE_CUM_DENSITY)
+               DEALLOCATE(REACTION_COUNT_CUM)
+            END IF
+            ! ==================================================================
+
+            ! ========== Analytical D-D Fusion Rate Density (ASCII) [reactions/(m³·s)] ==========
+            IF (BOOL_ANALYTICAL) THEN
+               ALLOCATE(ANALYTICAL_DD_RATE(NCELLS))
+               ALLOCATE(ANALYTICAL_DD_RATE_SP(NCELLS))
+               ANALYTICAL_DD_RATE = 0.0D0
+               SP_BG_ID = MIXTURES(MCC_BG_MIX)%COMPONENTS(1)%ID
+               M_BG = SPECIES(SP_BG_ID)%MOLECULAR_MASS
+               N_BG_NUCLEONS = MCC_BG_DENS * NINT(M_BG / 3.344D-27)
+
+               DO JS = 1, N_SPECIES
+                  FIRST = 1 + (JS-1)*NCELLS
+                  LAST  = JS*NCELLS
+                  M_BEAM = SPECIES(JS)%MOLECULAR_MASS
+                  NUCLEON_FACTOR = NINT(M_BEAM / 3.344D-27)
+                  IF (NUCLEON_FACTOR < 1) CYCLE
+
+                  ANALYTICAL_DD_RATE_SP = 0.0D0
+                  DO I = 1, NCELLS
+                     IF (GRID_TYPE == RECTILINEAR_UNIFORM .AND. .NOT. AXI) THEN
+                        VOL_CELL = CELL_VOL
+                     ELSE IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
+                        VOL_CELL = CELL_VOLUMES(I)
+                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
+                        VOL_CELL = U1D_GRID%CELL_VOLUMES(I)
+                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
+                        VOL_CELL = U2D_GRID%CELL_VOLUMES(I)
+                     ELSE
+                        VOL_CELL = CELL_VOL
+                     END IF
+
+                     IF (VOL_CELL > 0.0D0 .AND. AVG_NP(FIRST+I-1) > 0.0D0) THEN
+                        NRHO_CELL = FNUM * AVG_NP(FIRST+I-1) / VOL_CELL
+                        T_CELL = AVG_TTR(FIRST+I-1)
+                        T_EFF = (M_BG * T_CELL + M_BEAM * MCC_BG_TTRA) / (M_BEAM + M_BG)
+                        T_KEV = T_EFF * 8.61733326D-8
+                        SIGMAV = BOSCH_HALE_DD_SIGMAV(T_KEV)
+                        ANALYTICAL_DD_RATE_SP(I) = NRHO_CELL * DBLE(NUCLEON_FACTOR) &
+                           * N_BG_NUCLEONS * SIGMAV
+                        ANALYTICAL_DD_RATE(I) = ANALYTICAL_DD_RATE(I) &
+                           + ANALYTICAL_DD_RATE_SP(I)
+                     END IF
+                  END DO
+
+                  ! Write per-species field
+                  WRITE(string, '(A,A)') 'dd_rate_', TRIM(SPECIES(JS)%NAME)
+                  WRITE(54321,'(A,I10,I10,A7)') TRIM(string), 1, NCELLS, 'double'
+                  WRITE(54321,*) ANALYTICAL_DD_RATE_SP
+               END DO
+
+               ! Write total field
+               WRITE(54321,'(A,I10,I10,A7)') 'analytical_dd_rate', 1, NCELLS, 'double'
+               WRITE(54321,*) ANALYTICAL_DD_RATE
+               DEALLOCATE(ANALYTICAL_DD_RATE)
+               DEALLOCATE(ANALYTICAL_DD_RATE_SP)
+            END IF
+            ! ==
 
             IF (PIC_TYPE .NE. NONE) THEN
                IF (GRID_TYPE == UNSTRUCTURED) THEN
@@ -1090,6 +1355,12 @@ MODULE postprocess
       AVG_CUMULATED_INTENSIVE_TWO = 0
 
       IF (BOOL_DUMP_MOMENTS) AVG_MOMENTS = 0
+
+      ! Reset only the windowed reaction counts; cumulative counts keep growing
+      IF (BOOL_REACTION_STATISTICS .AND. ALLOCATED(REACTION_CELL_COUNTS)) THEN
+         REACTION_CELL_COUNTS = 0
+         REACTION_CELL_COUNTS_GLOBAL = 0
+      END IF
 
    END SUBROUTINE GRID_RESET
 
@@ -2118,6 +2389,43 @@ MODULE postprocess
       SPECTRAL_TOTAL_EVENTS = 0
       
    END SUBROUTINE WRITE_SPECTRAL_OUTPUT
+
+
+   ! ========================================================================
+   ! FUNCTION BOSCH_HALE_DD_SIGMAV -> D-D total fusion reactivity <σv> [m³/s]
+   ! Reference: Bosch & Hale, Nuclear Fusion 32 (1992) 611
+   ! Valid for 0.5 keV < T < 550 keV
+   ! Returns sum of D(d,n)³He and D(d,p)T branches
+   ! ========================================================================
+
+   FUNCTION BOSCH_HALE_DD_SIGMAV(T_keV) RESULT(sigmav)
+      IMPLICIT NONE
+      REAL(KIND=8), INTENT(IN) :: T_keV
+      REAL(KIND=8) :: sigmav
+      REAL(KIND=8) :: BG, mrc2, theta, xi, sv1, sv2
+
+      sigmav = 0.0D0
+      IF (T_keV <= 0.5D0 .OR. T_keV >= 550.0D0) RETURN
+
+      BG   = 31.3970D0
+      mrc2 = 937814.0D0  ! reduced mass energy [keV]
+
+      ! D(d,n)³He branch
+      theta = T_keV / (1.0D0 - T_keV * 5.85778D-3 &
+              / (1.0D0 + T_keV * (7.68222D-3 + T_keV * (-2.96400D-6))))
+      xi = (BG**2 / (4.0D0 * theta))**(1.0D0/3.0D0)
+      sv1 = 5.43360D-12 * theta * SQRT(xi / (mrc2 * T_keV**3)) * EXP(-3.0D0 * xi)
+
+      ! D(d,p)T branch
+      theta = T_keV / (1.0D0 - T_keV * 3.41267D-3 &
+              / (1.0D0 + T_keV * (1.99167D-3 + T_keV * 1.05060D-5)))
+      xi = (BG**2 / (4.0D0 * theta))**(1.0D0/3.0D0)
+      sv2 = 5.65718D-12 * theta * SQRT(xi / (mrc2 * T_keV**3)) * EXP(-3.0D0 * xi)
+
+      ! Total: convert cm³/s -> m³/s
+      sigmav = (sv1 + sv2) * 1.0D-6
+
+   END FUNCTION BOSCH_HALE_DD_SIGMAV
 
 
 END MODULE postprocess

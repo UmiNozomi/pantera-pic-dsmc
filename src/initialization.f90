@@ -352,6 +352,7 @@ MODULE initialization
                SQRT(SPECTRAL_LOS_DIRECTION(1)**2 + SPECTRAL_LOS_DIRECTION(2)**2 + SPECTRAL_LOS_DIRECTION(3)**2)
          END IF
          IF (line=='Spectral_background_fraction:') READ(in1,*) SPECTRAL_BACKGROUND_FRACTION
+         IF (line=='Bool_ha_passive_diagnostic:') READ(in1,*) BOOL_HA_PASSIVE_DIAGNOSTIC
          IF (line=='Bool_reaction_statistics:') READ(in1,*) BOOL_REACTION_STATISTICS
          
 
@@ -1921,6 +1922,24 @@ MODULE initialization
             END IF
          END IF
          ! ========== End of Halpha detection ==========
+         
+         ! ========== NEW: Passive Hα Diagnostic - Detect Ha(total) channels ==========
+         ! Identify heavy-particle Ha(total) channels by filename (Phase 1)
+         ! These are the 5 Tabata & Shirai channels that produce Hα emission
+         NEW_REACTION%IS_HA_HEAVY = .FALSE.
+         IF (NEW_REACTION%TYPE == LXCAT) THEN
+            ! R8:  H+  + H2 -> Ha(total)
+            IF (INDEX(REACTION_FILENAME, 'H2-08-EXCITATION') > 0) NEW_REACTION%IS_HA_HEAVY = .TRUE.
+            ! R16: H2+ + H2 -> Ha(total)
+            IF (INDEX(REACTION_FILENAME, 'H2-16-EXCITATION') > 0) NEW_REACTION%IS_HA_HEAVY = .TRUE.
+            ! R23: H3+ + H2 -> Ha(total)
+            IF (INDEX(REACTION_FILENAME, 'H2-23-EXCITATION') > 0) NEW_REACTION%IS_HA_HEAVY = .TRUE.
+            ! R33: H   + H2 -> Ha(total)
+            IF (INDEX(REACTION_FILENAME, 'H2-33-EXCITATION') > 0) NEW_REACTION%IS_HA_HEAVY = .TRUE.
+            ! R44: H2  + H2 -> Ha(total) (includes H2f fast molecules)
+            IF (INDEX(REACTION_FILENAME, 'H2-44-EXCITATION') > 0) NEW_REACTION%IS_HA_HEAVY = .TRUE.
+         END IF
+         ! ==========================================================================
 
          IF (ReasonEOF < 0) EXIT ! End of file reached
          
@@ -2586,19 +2605,44 @@ MODULE initialization
          IF (PROC_ID == 0) THEN
             WRITE(*,*) '  Spectral diagnostics enabled (per-reaction channel)'
             WRITE(*,*) '    Hα-producing reactions:', N_HALPHA_REACTIONS
+            
+            ! NEW: Report IS_HA_HEAVY channels (Phase 1)
+            WRITE(*,*) '    Heavy-particle Ha(total) channels detected:'
+            DO i = 1, N_REACTIONS
+               IF (REACTIONS(i)%IS_HA_HEAVY) THEN
+                  WRITE(*,'(A,I4,A,I3,A,I3,A)') '      Reaction', i, ': ', &
+                     REACTIONS(i)%R1_SP_ID, ' +', REACTIONS(i)%R2_SP_ID, ' -> Ha(total)'
+               END IF
+            END DO
+            
             WRITE(*,*) '    Bins:', N_SPECTRAL_BINS
             WRITE(*,*) '    vLOS range [m/s]:', SPECTRAL_VLOS_MIN, 'to', SPECTRAL_VLOS_MAX
             WRITE(*,*) '    Sampling rate:', SPECTRAL_SAMPLING_RATE
+            
+            ! Report passive Hα diagnostic status
+            IF (BOOL_HA_PASSIVE_DIAGNOSTIC) THEN
+               WRITE(*,*) '  '
+               WRITE(*,*) '  ✓ Passive Hα diagnostic ENABLED'
+               WRITE(*,*) '    Output: results/ha_events_p*.csv (one file per MPI rank)'
+               WRITE(*,*) '    Post-process: python iech2/process_ha_events.py'
+            END IF
          END IF
       END IF
 
       ! ========== Initialize Reaction Statistics Arrays ==========
       IF (BOOL_REACTION_STATISTICS) THEN
          ALLOCATE(REACTION_CELL_COUNTS(N_REACTIONS, NCELLS))
+         ALLOCATE(REACTION_CELL_COUNTS_GLOBAL(N_REACTIONS, NCELLS))
+         ALLOCATE(REACTION_CELL_COUNTS_CUM(N_REACTIONS, NCELLS))
+         ALLOCATE(REACTION_CELL_COUNTS_CUM_GLOBAL(N_REACTIONS, NCELLS))
          REACTION_CELL_COUNTS = 0
+         REACTION_CELL_COUNTS_GLOBAL = 0
+         REACTION_CELL_COUNTS_CUM = 0
+         REACTION_CELL_COUNTS_CUM_GLOBAL = 0
          IF (PROC_ID == 0) THEN
             WRITE(*,*) '  Reaction statistics enabled (VTK output)'
             WRITE(*,*) '    Tracking', N_REACTIONS, 'reactions in', NCELLS, 'cells'
+            WRITE(*,*) '    Added cumulative reaction maps for sparse-event studies'
          END IF
       END IF
 

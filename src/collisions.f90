@@ -1731,6 +1731,16 @@ MODULE collisions
                IF (R_SELECT < P_CUMULATED) THEN ! Collision happens
                   REACTIONS(JR)%COUNTS = REACTIONS(JR)%COUNTS + 1
 
+                  ! ========== Hα PASSIVE DIAGNOSTIC HOOK (Phase 2) ==========
+                  ! Record projectile pre-collision state for Ha(total) channels
+                  ! CRITICAL: This must be BEFORE particle velocities are modified
+                  IF (REACTIONS(JR)%IS_HA_HEAVY .AND. BOOL_HA_PASSIVE_DIAGNOSTIC) THEN
+                     IF (rf() < SPECTRAL_SAMPLING_RATE) THEN  ! Use existing sampling rate
+                        CALL HA_LOG_EVENT(JR, SP_ID1, particles(JP1), C1, ETR)
+                     END IF
+                  END IF
+                  ! ===========================================================
+
                   ! Actually create the second collision partner
                   CALL INTERNAL_ENERGY(SPECIES(SP_ID2)%ROTDOF, MCC_BG_TTRA, EROT)
                   CALL INTERNAL_ENERGY(SPECIES(SP_ID2)%VIBDOF, MCC_BG_TTRA, EVIB)
@@ -1987,6 +1997,7 @@ MODULE collisions
                      JC = particles(JP1)%IC
                      IF (JC .GE. 1 .AND. JC .LE. NCELLS) THEN
                         REACTION_CELL_COUNTS(JR, JC) = REACTION_CELL_COUNTS(JR, JC) + 1
+                        REACTION_CELL_COUNTS_CUM(JR, JC) = REACTION_CELL_COUNTS_CUM(JR, JC) + 1
                      END IF
                   END IF
                   ! ========== End of diagnostics ==========
@@ -2030,6 +2041,106 @@ MODULE collisions
       END IF
       
    END SUBROUTINE ACCUMULATE_SPECTRAL_EVENT_BY_REACTION
+
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! HA_LOG_EVENT - Log Hα emission event (passive diagnostic, Phase 2+3)        !!
+   ! Records projectile pre-collision state with energy range gating             !!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   
+   SUBROUTINE HA_LOG_EVENT(reaction_id, proj_species, proj_particle, vel_pre, E_coll)
+      IMPLICIT NONE
+      INTEGER, INTENT(IN) :: reaction_id, proj_species
+      TYPE(PARTICLE_DATA_STRUCTURE), INTENT(IN) :: proj_particle
+      REAL(KIND=8), DIMENSION(3), INTENT(IN) :: vel_pre
+      REAL(KIND=8), INTENT(IN) :: E_coll
+      
+      ! Energy range gating (Phase 3) - prevent out-of-range logging
+      REAL(KIND=8) :: E_min, E_max
+      
+      ! Check energy validity if table exists (important for H2f channel 44)
+      IF (ALLOCATED(REACTIONS(reaction_id)%TABLE_ENERGY)) THEN
+         E_min = MINVAL(REACTIONS(reaction_id)%TABLE_ENERGY)
+         E_max = MAXVAL(REACTIONS(reaction_id)%TABLE_ENERGY)
+         
+         IF (E_coll < E_min .OR. E_coll > E_max) THEN
+            RETURN  ! Do not log out-of-range events
+         END IF
+      END IF
+      
+      ! Increment buffer count
+      HA_EVENT_COUNT = HA_EVENT_COUNT + 1
+      
+      ! Flush buffer if full
+      IF (HA_EVENT_COUNT > HA_BUFFER_SIZE) THEN
+         CALL HA_FLUSH_BUFFER()
+         HA_EVENT_COUNT = 1
+      END IF
+      
+      ! Record event to buffer (use negative timestep as marker, compute time in post-processing)
+      HA_EVENT_BUFFER(HA_EVENT_COUNT)%TIMESTEP = -1  ! Will be set during flush
+      HA_EVENT_BUFFER(HA_EVENT_COUNT)%TIME = 0.0D0  ! Will be computed in post-processing
+      HA_EVENT_BUFFER(HA_EVENT_COUNT)%REACTION_ID = reaction_id
+      HA_EVENT_BUFFER(HA_EVENT_COUNT)%PROJECTILE_SPECIES = proj_species
+      HA_EVENT_BUFFER(HA_EVENT_COUNT)%POS_X = proj_particle%X
+      HA_EVENT_BUFFER(HA_EVENT_COUNT)%POS_Y = proj_particle%Y
+      HA_EVENT_BUFFER(HA_EVENT_COUNT)%POS_Z = proj_particle%Z
+      HA_EVENT_BUFFER(HA_EVENT_COUNT)%VEL_X = vel_pre(1)
+      HA_EVENT_BUFFER(HA_EVENT_COUNT)%VEL_Y = vel_pre(2)
+      HA_EVENT_BUFFER(HA_EVENT_COUNT)%VEL_Z = vel_pre(3)
+      HA_EVENT_BUFFER(HA_EVENT_COUNT)%MACRO_WEIGHT = 1.0D0  ! Assume unity weight (or will be computed later)
+      HA_EVENT_BUFFER(HA_EVENT_COUNT)%COLLISION_ENERGY = E_coll / QE  ! Convert J to eV
+      
+   END SUBROUTINE HA_LOG_EVENT
+
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! HA_FLUSH_BUFFER - Write buffered events to CSV file (Phase 2)               !!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   
+   SUBROUTINE HA_FLUSH_BUFFER()
+      IMPLICIT NONE
+      INTEGER :: i
+      CHARACTER(LEN=256) :: filename
+      LOGICAL :: file_exists
+      
+      IF (HA_EVENT_COUNT == 0) RETURN
+      
+      ! Write to CSV file (append mode) - one file per process to avoid race conditions
+      WRITE(filename, '(A,I5.5,A)') 'results/ha_events_p', PROC_ID, '.csv'
+      
+      INQUIRE(FILE=TRIM(filename), EXIST=file_exists)
+      
+      OPEN(UNIT=98, FILE=TRIM(filename), STATUS='UNKNOWN', POSITION='APPEND')
+      
+      ! Write header if new file
+      IF (.NOT. file_exists) THEN
+         WRITE(98, '(A)') 'timestep,time,reaction_id,species_id,x,y,z,vx,vy,vz,weight,E_coll_eV'
+      END IF
+      
+      ! Write buffered events
+      DO i = 1, HA_EVENT_COUNT
+         WRITE(98, '(I10,A,ES15.7,A,I5,A,I5,A,7(ES15.7,A))') &
+            HA_EVENT_BUFFER(i)%TIMESTEP, ',', &
+            HA_EVENT_BUFFER(i)%TIME, ',', &
+            HA_EVENT_BUFFER(i)%REACTION_ID, ',', &
+            HA_EVENT_BUFFER(i)%PROJECTILE_SPECIES, ',', &
+            HA_EVENT_BUFFER(i)%POS_X, ',', &
+            HA_EVENT_BUFFER(i)%POS_Y, ',', &
+            HA_EVENT_BUFFER(i)%POS_Z, ',', &
+            HA_EVENT_BUFFER(i)%VEL_X, ',', &
+            HA_EVENT_BUFFER(i)%VEL_Y, ',', &
+            HA_EVENT_BUFFER(i)%VEL_Z, ',', &
+            HA_EVENT_BUFFER(i)%MACRO_WEIGHT, ',', &
+            HA_EVENT_BUFFER(i)%COLLISION_ENERGY, ','
+      END DO
+      
+      CLOSE(98)
+      
+      ! Reset buffer
+      HA_EVENT_COUNT = 0
+      
+   END SUBROUTINE HA_FLUSH_BUFFER
 
 
 END MODULE collisions

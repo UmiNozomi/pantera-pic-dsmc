@@ -460,12 +460,34 @@ MODULE global
    INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: SPECTRAL_TOTAL_EVENTS ! Per-reaction event counts
    INTEGER :: N_HALPHA_REACTIONS = 0  ! Number of reactions that produce Hα
    
+   ! ========== Hα Passive Diagnostic Event Buffer (Phase 2) ==========
+   INTEGER, PARAMETER :: HA_BUFFER_SIZE = 10000
+   INTEGER :: HA_EVENT_COUNT = 0
+   LOGICAL :: BOOL_HA_PASSIVE_DIAGNOSTIC = .FALSE.
+   
+   TYPE HA_EVENT_RECORD
+      INTEGER :: TIMESTEP
+      REAL(KIND=8) :: TIME
+      INTEGER :: REACTION_ID
+      INTEGER :: PROJECTILE_SPECIES
+      REAL(KIND=8) :: POS_X, POS_Y, POS_Z
+      REAL(KIND=8) :: VEL_X, VEL_Y, VEL_Z
+      REAL(KIND=8) :: MACRO_WEIGHT
+      REAL(KIND=8) :: COLLISION_ENERGY  ! eV
+   END TYPE HA_EVENT_RECORD
+   
+   TYPE(HA_EVENT_RECORD), DIMENSION(HA_BUFFER_SIZE) :: HA_EVENT_BUFFER
+   ! ==================================================================
+   
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    !!!!!!!!! Reaction Statistics for VTK Output !!!!!!!!!!!!!!!!!!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    
    LOGICAL :: BOOL_REACTION_STATISTICS = .FALSE.
-   INTEGER, DIMENSION(:,:), ALLOCATABLE :: REACTION_CELL_COUNTS  ! (N_REACTIONS, NCELLS)
+   INTEGER, DIMENSION(:,:), ALLOCATABLE :: REACTION_CELL_COUNTS            ! Window counts since last dump
+   INTEGER, DIMENSION(:,:), ALLOCATABLE :: REACTION_CELL_COUNTS_GLOBAL     ! Reduced window counts for output
+   INTEGER, DIMENSION(:,:), ALLOCATABLE :: REACTION_CELL_COUNTS_CUM        ! Cumulative counts since start
+   INTEGER, DIMENSION(:,:), ALLOCATABLE :: REACTION_CELL_COUNTS_CUM_GLOBAL ! Reduced cumulative counts for output
 
    INTEGER           :: BGK_MODEL_TYPE_INT = 0
    REAL(KIND=8)      :: BGK_BG_DENS, BGK_SIGMA, BGK_BG_MASS
@@ -635,6 +657,8 @@ MODULE global
       ! Spectral diagnostics fields
       LOGICAL :: PRODUCES_HALPHA = .FALSE.
       INTEGER :: EMITTING_PRODUCT_ID = 0
+      ! Passive Hα diagnostic (Phase 1)
+      LOGICAL :: IS_HA_HEAVY = .FALSE.  ! Heavy-particle Ha(total) channel flag
    END TYPE REACTIONS_DATA_STRUCTURE
 
    TYPE(REACTIONS_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: REACTIONS, TEMP_REACTIONS

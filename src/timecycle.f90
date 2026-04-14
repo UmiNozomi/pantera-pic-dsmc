@@ -361,6 +361,13 @@ MODULE timecycle
                CALL GRID_SAVE
                ! Output spectral diagnostics if enabled
                IF (BOOL_SPECTRAL_DIAGNOSTICS) CALL WRITE_SPECTRAL_OUTPUT(tID)
+               ! Flush Hα event buffer if passive diagnostic enabled
+               IF (BOOL_HA_PASSIVE_DIAGNOSTIC .AND. HA_EVENT_COUNT > 0) THEN
+                  CALL HA_FLUSH_BUFFER()
+                  IF (PROC_ID == 0) THEN
+                     WRITE(*,'(A,I10,A)') '    Flushed ', HA_EVENT_COUNT, ' Hα events to CSV'
+                  END IF
+               END IF
                CALL GRID_RESET
             ! If we are just in a grid average timestep, compute the grid average
             ELSE IF (MOD(tID-DUMP_GRID_START, DUMP_GRID_AVG_EVERY) .EQ. 0) THEN
@@ -416,6 +423,18 @@ MODULE timecycle
          tID = tID + 1
 
       END DO
+
+      ! ========== Final flush of Hα event buffer ==========
+      ! Ensure any remaining events (< 10000) are written to file
+      IF (BOOL_HA_PASSIVE_DIAGNOSTIC .AND. HA_EVENT_COUNT > 0) THEN
+         IF (PROC_ID == 0) THEN
+            WRITE(*,*) ''
+            WRITE(*,*) '  Flushing Hα event buffer...'
+            WRITE(*,'(A,I10,A)') '    Writing final ', HA_EVENT_COUNT, ' events to ha_events.csv'
+         END IF
+         CALL HA_FLUSH_BUFFER()
+      END IF
+      ! ====================================================
 
    END SUBROUTINE TIME_LOOP
  
