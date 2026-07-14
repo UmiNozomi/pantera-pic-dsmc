@@ -1,0 +1,20 @@
+e- + H2 --> e- + H2
+lxcat 2.723e-4 ELASTIC.txt
+
+e- + H2 --> e- + H2*
+lxcat 0.5  EXCITATION3.txt
+
+e- + H2 --> e- + e- + H2+
+lxcat 15.43 IONIZATION.txt
+
+H2+ + H2 --> H2+ + H2+ + e-
+lxcat 31.0   IONIZATION2.txt
+
+H2+ + H2 --> H2f + H2+
+lxcat 1.0  EXCHANGE.txt
+
+H2f + H2 --> H2 + H2+ + e-
+lxcat 31.0  IONIZATION3.txt
+
+H2+ + H2 --> H3+ + H
+lxcat 1.0e-2   ProtonTransfer.txt

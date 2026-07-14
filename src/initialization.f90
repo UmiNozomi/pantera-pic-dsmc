@@ -99,6 +99,10 @@ MODULE initialization
             READ(in1,'(A)') SEE_BOUNDARY_DEFINITION
             CALL DEF_SEE_BOUNDARY_MAPPING(SEE_BOUNDARY_DEFINITION)
          END IF
+         IF (line=='SEE_ion_yield_table:') THEN
+            READ(in1,'(A)') SEE_BOUNDARY_DEFINITION
+            CALL DEF_SEE_ION_YIELD_TABLE(SEE_BOUNDARY_DEFINITION)
+         END IF
          IF (line=='SEE_stats_output:')        READ(in1,*) SEE_STATS_SAVE_PATH
          IF (line=='Number_of_cells:')         READ(in1,*) NX, NY, NZ
 
@@ -233,13 +237,18 @@ MODULE initialization
          IF (line=='Dump_bound_avgevery:')     READ(in1,*) DUMP_BOUND_AVG_EVERY
          IF (line=='Dump_bound_start:')        READ(in1,*) DUMP_BOUND_START
          IF (line=='Dump_bound_numavgs:')      READ(in1,*) DUMP_BOUND_N_AVG
+         IF (line=='Wall_energy_bins:')        READ(in1,*) WALL_ENERGY_N_BINS
+         IF (line=='Wall_energy_min_eV:')      READ(in1,*) WALL_ENERGY_MIN_EV
+         IF (line=='Wall_energy_max_eV:')      READ(in1,*) WALL_ENERGY_MAX_EV
          IF (line=='Dump_grid_avgevery:')      READ(in1,*) DUMP_GRID_AVG_EVERY
          IF (line=='Dump_grid_start:')         READ(in1,*) DUMP_GRID_START
          IF (line=='Dump_grid_numavgs:')       READ(in1,*) DUMP_GRID_N_AVG
          IF (line=='Bool_dump_moments:')       READ(in1,*) BOOL_DUMP_MOMENTS
          IF (line=='Bool_dump_fluxes:')        READ(in1,*) BOOL_DUMP_FLUXES
          IF (line=='Dump_traj_start:')         READ(in1,*) DUMP_TRAJECTORY_START
+         IF (line=='Dump_traj_every:')         READ(in1,*) DUMP_TRAJECTORY_EVERY
          IF (line=='Dump_traj_number:')        READ(in1,*) DUMP_TRAJECTORY_NUMBER
+         IF (line=='Dump_traj_number_per_proc:') READ(in1,*) DUMP_TRAJECTORY_NUMBER
 
 
          IF (line=='Inject_from_file:') THEN
@@ -1108,6 +1117,12 @@ MODULE initialization
          READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%WALL_TEMP
          READ(STRARRAY(4), '(ES14.0)') GRID_BC(IPG)%ACC_N
          READ(STRARRAY(5), '(ES14.0)') GRID_BC(IPG)%ACC_T
+      ELSE IF (STRARRAY(2) == 'energy_cll') THEN
+         GRID_BC(IPG)%PARTICLE_BC = ENERGY_CLL
+         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%WALL_TEMP
+         READ(STRARRAY(4), '(ES14.0)') GRID_BC(IPG)%ACC_N
+         READ(STRARRAY(5), '(ES14.0)') GRID_BC(IPG)%ACC_T
+         READ(STRARRAY(6), '(ES14.0)') GRID_BC(IPG)%ENERGY_THRESHOLD_EV
       ELSE IF (STRARRAY(2) == 'react') THEN
          GRID_BC(IPG)%REACT = .TRUE.
          ! Check if a boundary-specific wall reactions file is provided
@@ -1184,6 +1199,7 @@ MODULE initialization
          ELSE
             GRID_BC(IPG)%SLIDING_WINDOW_SIZE = 10
          END IF
+         GRID_BC(IPG)%SLIDING_WINDOW_SIZE = MAX(1, GRID_BC(IPG)%SLIDING_WINDOW_SIZE)
          
          ! Optional: Voltage safety limits (parameters 9 and 10)
          IF (N_STR >= 9) THEN
@@ -1194,6 +1210,19 @@ MODULE initialization
          IF (N_STR >= 10) THEN
             READ(STRARRAY(10), '(ES14.0)') GRID_BC(IPG)%VOLTAGE_MAX
          END IF
+
+         ! Optional: Anti-windup / PI activation ratios (parameters 11 and 12)
+         IF (N_STR >= 11) THEN
+            READ(STRARRAY(11), '(ES14.0)') GRID_BC(IPG)%PID_I_ACTIVATE_RATIO
+         END IF
+
+         IF (N_STR >= 12) THEN
+            READ(STRARRAY(12), '(ES14.0)') GRID_BC(IPG)%PID_I_FULL_RATIO
+         END IF
+
+         GRID_BC(IPG)%PID_I_ACTIVATE_RATIO = MAX(0.d0, MIN(1.d0, GRID_BC(IPG)%PID_I_ACTIVATE_RATIO))
+         GRID_BC(IPG)%PID_I_FULL_RATIO = MAX(GRID_BC(IPG)%PID_I_ACTIVATE_RATIO + 1.d-6, &
+                                             GRID_BC(IPG)%PID_I_FULL_RATIO)
          
          GRID_BC(IPG)%WALL_POTENTIAL = GRID_BC(IPG)%INITIAL_VOLTAGE
          
@@ -1204,6 +1233,9 @@ MODULE initialization
          GRID_BC(IPG)%CURRENT_WINDOW_ION = 0.d0
          GRID_BC(IPG)%CURRENT_WINDOW_ELEC = 0.d0
          GRID_BC(IPG)%CURRENT_WINDOW_SEE = 0.d0
+         GRID_BC(IPG)%WINDOW_INDEX = 0
+         GRID_BC(IPG)%WINDOW_SAMPLE_COUNT = 0
+         GRID_BC(IPG)%STEPS_SINCE_PID_UPDATE = 0
          
          IF (PROC_ID == 0) THEN
             WRITE(*,'(A,A,A,ES10.3,A)') '> Constant current BC: ', TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME), &
@@ -1776,6 +1808,14 @@ MODULE initialization
             NEW_REACTION%N_PROD = 4
             NEW_REACTION%P4_SP_ID = REACTION_SPECIES_NAME_TO_ID(STRARRAY(11))
          END IF
+
+         IF (NEW_REACTION%R1_SP_ID < 1 .OR. NEW_REACTION%R2_SP_ID < 1 .OR. &
+             NEW_REACTION%P1_SP_ID < 1 .OR. NEW_REACTION%P2_SP_ID < 1 .OR. &
+             (NEW_REACTION%N_PROD >= 3 .AND. NEW_REACTION%P3_SP_ID < 1) .OR. &
+             (NEW_REACTION%N_PROD >= 4 .AND. NEW_REACTION%P4_SP_ID < 1)) THEN
+            WRITE(*,*) 'Invalid species in reactions file line: ', TRIM(DEFINITION)
+            CALL ERROR_ABORT('Attention, unknown species in reactions file.')
+         END IF
       
          IF (STRARRAY(4) == '-CEX->') THEN
             NEW_REACTION%IS_CEX = .TRUE.
@@ -2055,7 +2095,12 @@ MODULE initialization
       
          READ(in4,'(A)', IOSTAT=ReasonEOF) DEFINITION ! Read reaction parameters line
          CALL SPLIT_STR(DEFINITION, ' ', STRARRAY, N_STR)
+         NEW_REACTION%E_MIN_EV = 0.d0
+         NEW_REACTION%E_MAX_EV = HUGE(1.d0)
          READ(STRARRAY(1), '(ES14.0)') NEW_REACTION%PROB
+         IF (N_STR >= 2) READ(STRARRAY(2), '(ES14.0)') NEW_REACTION%E_MIN_EV
+         IF (N_STR >= 3) READ(STRARRAY(3), '(ES14.0)') NEW_REACTION%E_MAX_EV
+         IF (N_STR > 3) CALL ERROR_ABORT('Attention, wall reactions parameter line must be: prob [E_min_eV [E_max_eV]].')
 
          IF (ReasonEOF < 0) EXIT ! End of file reached
          
@@ -2159,7 +2204,12 @@ MODULE initialization
       
          READ(in4,'(A)', IOSTAT=ReasonEOF) DEFINITION ! Read reaction parameters line
          CALL SPLIT_STR(DEFINITION, ' ', STRARRAY, N_STR)
+         NEW_REACTION%E_MIN_EV = 0.d0
+         NEW_REACTION%E_MAX_EV = HUGE(1.d0)
          READ(STRARRAY(1), '(ES14.0)') NEW_REACTION%PROB
+         IF (N_STR >= 2) READ(STRARRAY(2), '(ES14.0)') NEW_REACTION%E_MIN_EV
+         IF (N_STR >= 3) READ(STRARRAY(3), '(ES14.0)') NEW_REACTION%E_MAX_EV
+         IF (N_STR > 3) CALL ERROR_ABORT('Attention, wall reactions parameter line must be: prob [E_min_eV [E_max_eV]].')
 
          IF (ReasonEOF < 0) EXIT ! End of file reached
          
@@ -3197,10 +3247,17 @@ MODULE initialization
       IMPLICIT NONE
 
       INTEGER, INTENT(IN) :: FILE_UNIT, N_RULES
-      INTEGER :: I, J, N_STR, IOS
+      INTEGER :: I, J, N_STR, IOS, SP_ID
       CHARACTER(LEN=512) :: LINE
       CHARACTER(LEN=80), ALLOCATABLE :: STRARRAY(:)
-      REAL(KIND=8) :: THRESHOLD_EV
+      REAL(KIND=8) :: THRESHOLD_EV, THRESHOLD_J, GAMMA_THRESHOLD, BETA2_THRESHOLD, V2_THRESHOLD
+
+      IF (ALLOCATED(ENERGY_REMOVAL_ACTIVE)) DEALLOCATE(ENERGY_REMOVAL_ACTIVE)
+      IF (ALLOCATED(ENERGY_REMOVAL_THRESHOLD_V2)) DEALLOCATE(ENERGY_REMOVAL_THRESHOLD_V2)
+      ALLOCATE(ENERGY_REMOVAL_ACTIVE(N_SPECIES))
+      ALLOCATE(ENERGY_REMOVAL_THRESHOLD_V2(N_SPECIES))
+      ENERGY_REMOVAL_ACTIVE = .FALSE.
+      ENERGY_REMOVAL_THRESHOLD_V2 = 0.d0
 
       DO I = 1, N_RULES
          ! Read the next line
@@ -3227,8 +3284,26 @@ MODULE initialization
          ENERGY_REMOVAL_RULES(I)%N_SPECIES = N_STR - 1
          ALLOCATE(ENERGY_REMOVAL_RULES(I)%SPECIES_IDS(ENERGY_REMOVAL_RULES(I)%N_SPECIES))
 
+         THRESHOLD_J = THRESHOLD_EV * QE
+
          DO J = 1, ENERGY_REMOVAL_RULES(I)%N_SPECIES
-            ENERGY_REMOVAL_RULES(I)%SPECIES_IDS(J) = SPECIES_NAME_TO_ID(TRIM(STRARRAY(J)))
+            SP_ID = SPECIES_NAME_TO_ID(TRIM(STRARRAY(J)))
+            IF (SP_ID < 1 .OR. SP_ID > N_SPECIES) THEN
+               WRITE(*,*) 'Invalid species in energy removal rule: ', TRIM(STRARRAY(J))
+               CALL ERROR_ABORT('Unknown species in Remove_particles_by_energy rule.')
+            END IF
+            ENERGY_REMOVAL_RULES(I)%SPECIES_IDS(J) = SP_ID
+
+            IF (SPECIES(SP_ID)%MOLECULAR_MASS > 0.d0 .AND. THRESHOLD_J > 0.d0) THEN
+               GAMMA_THRESHOLD = 1.d0 + THRESHOLD_J / (SPECIES(SP_ID)%MOLECULAR_MASS * C_LIGHT * C_LIGHT)
+               BETA2_THRESHOLD = MAX(0.d0, 1.d0 - 1.d0/(GAMMA_THRESHOLD*GAMMA_THRESHOLD))
+               V2_THRESHOLD = BETA2_THRESHOLD * C_LIGHT * C_LIGHT
+            ELSE
+               V2_THRESHOLD = 0.d0
+            END IF
+
+            ENERGY_REMOVAL_ACTIVE(SP_ID) = .TRUE.
+            ENERGY_REMOVAL_THRESHOLD_V2(SP_ID) = MAX(ENERGY_REMOVAL_THRESHOLD_V2(SP_ID), V2_THRESHOLD)
          END DO
 
          IF (PROC_ID == 0) THEN
@@ -3246,4 +3321,3 @@ MODULE initialization
 
 
 END MODULE initialization
-

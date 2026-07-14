@@ -1,0 +1,59 @@
+IONIZATION
+D+D2->fusion_eff
+ 2.000000e+03
+SPECIES: D / D2
+PROCESS: D + D2 -> fusion (effective D-D nuclear fusion, total)
+PARAM.:  Threshold = 2000 eV (projectile lab frame)
+COMMENT: Effective D-D fusion total cross section (both branches: D+D->He3+n and D+D->T+p)
+COMMENT: Based on Bosch & Hale (1992) Nuclear Fusion 32, 611
+COMMENT: Derived from uploaded dd_fusion.txt and retains its x1e10 scaling
+COMMENT: sigma_eff(E) = 2 * sigma_DD(E/2)
+COMMENT: Effective table only; not a microscopic molecular fusion cross section
+UPDATED: 2026-03-31
+COLUMNS: Projectile energy (eV) | Effective cross section (m2)
+-----------------------------
+  0.000000e+00	0.00000e+00
+  2.000000e+02	0.00000e+00
+  1.000000e+03	0.00000e+00
+  2.000000e+03	6.49592e-37
+  4.000000e+03	4.00102e-31
+  6.000000e+03	1.33159e-28
+  8.000000e+03	4.05496e-27
+  1.000000e+04	4.06304e-26
+  1.200000e+04	2.18800e-25
+  1.400000e+04	7.99750e-25
+  1.600000e+04	2.25268e-24
+  1.800000e+04	5.27394e-24
+  2.000000e+04	1.07697e-23
+  2.200000e+04	1.98133e-23
+  2.400000e+04	3.35904e-23
+  2.600000e+04	5.33432e-23
+  2.800000e+04	8.03184e-23
+  3.000000e+04	1.15725e-22
+  3.200000e+04	1.60701e-22
+  3.400000e+04	2.16290e-22
+  3.600000e+04	2.83428e-22
+  3.800000e+04	3.62924e-22
+  4.000000e+04	4.55476e-22
+  5.000000e+04	1.13010e-21
+  6.000000e+04	2.17264e-21
+  7.000000e+04	3.56768e-21
+  8.000000e+04	5.27416e-21
+  9.000000e+04	7.24132e-21
+  1.000000e+05	9.41772e-21
+  1.200000e+05	1.42138e-20
+  1.400000e+05	1.93529e-20
+  1.600000e+05	2.46170e-20
+  1.800000e+05	2.98612e-20
+  2.000000e+05	3.49934e-20
+  2.400000e+05	4.47224e-20
+  3.000000e+05	5.77124e-20
+  4.000000e+05	7.52664e-20
+  5.000000e+05	8.87488e-20
+  6.000000e+05	9.93002e-20
+  7.000000e+05	1.07753e-19
+  8.000000e+05	1.14682e-19
+  9.000000e+05	1.20485e-19
+  1.000000e+06	1.25441e-19
+  1.048000e+06	1.27581e-19
+-----------------------------

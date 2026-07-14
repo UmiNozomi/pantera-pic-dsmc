@@ -164,9 +164,12 @@ MODULE timecycle
             DO IPG = 1, N_GRID_BC
                IF (GRID_BC(IPG)%IS_CONSTANT_CURRENT) THEN
                   ! Calculate smoothed currents
-                  CC_I_ION = SUM(GRID_BC(IPG)%CURRENT_WINDOW_ION) / DBLE(GRID_BC(IPG)%SLIDING_WINDOW_SIZE)
-                  CC_I_ELEC = SUM(GRID_BC(IPG)%CURRENT_WINDOW_ELEC) / DBLE(GRID_BC(IPG)%SLIDING_WINDOW_SIZE)
-                  CC_I_SEE = SUM(GRID_BC(IPG)%CURRENT_WINDOW_SEE) / DBLE(GRID_BC(IPG)%SLIDING_WINDOW_SIZE)
+                  CC_I_ION = SUM(GRID_BC(IPG)%CURRENT_WINDOW_ION) / &
+                             DBLE(MAX(1, GRID_BC(IPG)%WINDOW_SAMPLE_COUNT))
+                  CC_I_ELEC = SUM(GRID_BC(IPG)%CURRENT_WINDOW_ELEC) / &
+                              DBLE(MAX(1, GRID_BC(IPG)%WINDOW_SAMPLE_COUNT))
+                  CC_I_SEE = SUM(GRID_BC(IPG)%CURRENT_WINDOW_SEE) / &
+                             DBLE(MAX(1, GRID_BC(IPG)%WINDOW_SAMPLE_COUNT))
                   CC_I_TOT = CC_I_ION + CC_I_ELEC + CC_I_SEE
                   
                   IF (ABS(GRID_BC(IPG)%TARGET_CURRENT) > 1.d-20) THEN
@@ -392,13 +395,13 @@ MODULE timecycle
          IF (BOOL_DUMP_FLUXES) CALL DUMP_FLUXES_FILE(tID)
 
          ! ########### Dump SEE statistics ####################################
-         ! SEE statistics disabled per user request
-         ! IF (BOOL_SEE_ENABLED .AND. MOD(tID, STATS_EVERY) .EQ. 0) THEN
-         !    CALL WRITE_SEE_STATISTICS(tID)
-!    CALL CHECK_GLOW_DISCHARGE_CONDITIONS(tID)
-         ! END IF
+         IF (BOOL_SEE_ENABLED .AND. MOD(tID, STATS_EVERY) .EQ. 0) THEN
+            CALL WRITE_SEE_STATISTICS(tID)
+            CALL CHECK_GLOW_DISCHARGE_CONDITIONS(tID)
+         END IF
 
-         ! ########### Dump individual particle ###################################
+         ! ########### Dump selected particle trajectories ##########################
+         CALL MARK_TRAJECTORY_PARTICLES(tID)
          CALL DUMP_TRAJECTORY_FILE(tID)
          CALL TIMER_STOP(4)
 
@@ -819,7 +822,7 @@ MODULE timecycle
   
       IMPLICIT NONE
    
-      INTEGER      :: IP, IC, IS, NFS, ILINE, DUMP_COUNTER
+      INTEGER      :: IP, IC, IS, NFS, ILINE
       REAL(KIND=8) :: DTFRAC, Vdummy, V_NORM, V_PERP, X1, X2, Y1, Y2, R
       REAL(KIND=8) :: X, Y, Z, VX, VY, VZ, EROT, EVIB 
       TYPE(PARTICLE_DATA_STRUCTURE) :: particleNOW
@@ -844,7 +847,6 @@ MODULE timecycle
             IF (LINESOURCES(ILINE)%nfs(IS)-REAL(NFS, KIND=8) .GE. rf()) THEN ! Same as SPARTA's perspeciess
                NFS = NFS + 1
             END IF
-            DUMP_COUNTER = 0
             DO IP = 1, NFS ! Loop on particles to be injected
                
                CALL MAXWELL(0.d0, 0.d0, 0.d0, &
@@ -895,10 +897,6 @@ MODULE timecycle
    
                ! Init a particle object and assign it to the local vector of particles
                CALL INIT_PARTICLE(X,Y,Z,VX,VY,VZ,EROT,EVIB,S_ID,IC,DTFRAC,  particleNOW)
-               IF ((tID == DUMP_TRAJECTORY_START) .AND. (DUMP_COUNTER < DUMP_TRAJECTORY_NUMBER)) THEN
-                  particleNOW%DUMP_TRAJ = .TRUE.
-                  DUMP_COUNTER = DUMP_COUNTER + 1
-               END IF
                CALL ADD_PARTICLE_ARRAY(particleNOW, NP_PROC, particles)
    
             END DO
@@ -1124,6 +1122,7 @@ MODULE timecycle
       REAL(KIND=8), DIMENSION(3) :: TANG1, TANG2
       REAL(KIND=8) :: VDOTTANG1, VRM, RN, R1, R2, THETA1, THETA2, DOT_NORM, VTANGENT
       REAL(KIND=8) :: V_NORM, V_TANG1, V_TANG2, V_PERP, VZ, VDUMMY, EROT, EVIB, VDOTN, WALL_TEMP
+      REAL(KIND=8) :: IMPACT_ENERGY_EV
       INTEGER :: S_ID
       LOGICAL :: HASCOLLIDED
       REAL(KIND=8) :: XCOLL, YCOLL, COLLDIST, EDGE_X1, EDGE_Y1
@@ -1173,14 +1172,21 @@ MODULE timecycle
       DO IP = 1, NP_PROC
          REMOVE_PART(IP) = .FALSE.
 
-         ! Update velocity
+         ! Update velocity only for charged particles. Neutral particles do not
+         ! need field interpolation or Boris rotation, which is a hot-path cost.
+         S_ID = particles(IP)%S_ID
+         IF (S_ID < 1 .OR. S_ID > N_SPECIES) THEN
+            REMOVE_PART(IP) = .TRUE.
+            CYCLE
+         END IF
+
          IC = particles(IP)%IC
 
          V_NEW(1) = particles(IP)%VX
          V_NEW(2) = particles(IP)%VY
          V_NEW(3) = particles(IP)%VZ
 
-         IF (PIC_TYPE .NE. NONE) THEN
+         IF (PIC_TYPE .NE. NONE .AND. SPECIES(S_ID)%CHARGE .NE. 0.d0) THEN
             !PHIBAR_FIELD = 0.d0
             !EBAR_FIELD = 0.d0
             CALL APPLY_E_FIELD(IP, E)
@@ -1190,16 +1196,13 @@ MODULE timecycle
 
             B = B + EXTERNAL_B_FIELD
             ! CALL APPLY_RF_EB_FIELD(particles, IP, E, B)
-            
-
 
             V_OLD(1) = particles(IP)%VX
             V_OLD(2) = particles(IP)%VY
             V_OLD(3) = particles(IP)%VZ
 
             CALL UPDATE_VELOCITY_BORIS(particles(IP)%DTRIM, V_OLD, V_NEW, &
-            SPECIES(particles(IP)%S_ID)%CHARGE, SPECIES(particles(IP)%S_ID)%MOLECULAR_MASS, &
-            E, B)
+            SPECIES(S_ID)%CHARGE, SPECIES(S_ID)%MOLECULAR_MASS, E, B)
 
             ! Assign v^n to the particle, for simplicity
             !particles(IP)%VX = 0.5*(V_OLD(1) + V_NEW(1))
@@ -1495,6 +1498,8 @@ MODULE timecycle
                            GRID_BC(FACE_PG)%SPICE_NODE_CURRENT = GRID_BC(FACE_PG)%SPICE_NODE_CURRENT + QE*FNUM*CHARGE/DT
                         END IF
 
+                        N_SEE_SECONDARY = 0
+
                         ! Apply particle boundary condition
                         IF (GRID_BC(FACE_PG)%PARTICLE_BC == SPECULAR) THEN
                            ! Process secondary electron emission before surface interaction
@@ -1510,6 +1515,11 @@ MODULE timecycle
                                                                             IMPACT_POSITION(3), FACE_NORMAL, &
                                                                             SEE_MATERIAL_ID, particles(IP)%IC, SEE_SINGLE_PARTICLE)
                                     CALL ADD_PARTICLE_ARRAY(SEE_SINGLE_PARTICLE, NP_PROC, particles)
+                                    IF ((tID .GE. DUMP_GRID_START) .AND. (tID .NE. RESTART_TIMESTEP)) THEN
+                                       IF (MOD(tID-DUMP_BOUND_START, DUMP_BOUND_AVG_EVERY) .EQ. 0) THEN
+                                          CALL TALLY_PARTICLE_TO_BOUNDARY(.TRUE., SEE_SINGLE_PARTICLE, IC, BOUNDCOLL)
+                                       END IF
+                                    END IF
                                  END DO
                               END IF
                            END IF
@@ -1524,6 +1534,7 @@ MODULE timecycle
                               END IF
                               
                               CHARGE = SPECIES(particles(IP)%S_ID)%CHARGE
+                              WEIGHT_RATIO = WEIGHT_RATIO * SPECIES(particles(IP)%S_ID)%SPWT
                               
                               ! 1. Impact current (ions positive, electrons negative)
                               IF (CHARGE > 0.5d0) THEN
@@ -1569,6 +1580,11 @@ MODULE timecycle
                                                                             IMPACT_POSITION(3), FACE_NORMAL, &
                                                                             SEE_MATERIAL_ID, particles(IP)%IC, SEE_SINGLE_PARTICLE)
                                     CALL ADD_PARTICLE_ARRAY(SEE_SINGLE_PARTICLE, NP_PROC, particles)
+                                    IF ((tID .GE. DUMP_GRID_START) .AND. (tID .NE. RESTART_TIMESTEP)) THEN
+                                       IF (MOD(tID-DUMP_BOUND_START, DUMP_BOUND_AVG_EVERY) .EQ. 0) THEN
+                                          CALL TALLY_PARTICLE_TO_BOUNDARY(.TRUE., SEE_SINGLE_PARTICLE, IC, BOUNDCOLL)
+                                       END IF
+                                    END IF
                                  END DO
                               END IF
                            END IF
@@ -1583,6 +1599,7 @@ MODULE timecycle
                               END IF
                               
                               CHARGE = SPECIES(particles(IP)%S_ID)%CHARGE
+                              WEIGHT_RATIO = WEIGHT_RATIO * SPECIES(particles(IP)%S_ID)%SPWT
                               
                               ! 1. Impact current (ions positive, electrons negative)
                               IF (CHARGE > 0.5d0) THEN
@@ -1642,72 +1659,133 @@ MODULE timecycle
                            !    FACE_NORMAL(1), ',', FACE_NORMAL(2), ',', FACE_NORMAL(3)
                            ! END IF
 
-                        ELSE IF (GRID_BC(FACE_PG)%PARTICLE_BC == CLL) THEN
+                        ELSE IF (GRID_BC(FACE_PG)%PARTICLE_BC == CLL .OR. &
+                                 GRID_BC(FACE_PG)%PARTICLE_BC == ENERGY_CLL) THEN
+                           ! Process secondary electron emission before surface interaction
+                           IF (BOOL_SEE_ENABLED) THEN
+                              SEE_MATERIAL_ID = FIND_SEE_MATERIAL_FOR_BOUNDARY(FACE_PG, -1)
+                              IF (SEE_MATERIAL_ID > 0 .AND. SEE_MATERIAL_ID <= N_SEE_MATERIALS) THEN
+                                 IMPACT_POSITION = [particles(IP)%X, particles(IP)%Y, particles(IP)%Z]
+                                 CALL PROCESS_SEE_IMPACT(IP, IMPACT_POSITION, FACE_NORMAL, &
+                                                        SEE_MATERIAL_ID, N_SEE_SECONDARY)
+                                 DO ISE = 1, N_SEE_SECONDARY
+                                    CALL GENERATE_SINGLE_SECONDARY_ELECTRON(IMPACT_POSITION(1), IMPACT_POSITION(2), &
+                                                                            IMPACT_POSITION(3), FACE_NORMAL, &
+                                                                            SEE_MATERIAL_ID, particles(IP)%IC, SEE_SINGLE_PARTICLE)
+                                    CALL ADD_PARTICLE_ARRAY(SEE_SINGLE_PARTICLE, NP_PROC, particles)
+                                    IF ((tID .GE. DUMP_GRID_START) .AND. (tID .NE. RESTART_TIMESTEP)) THEN
+                                       IF (MOD(tID-DUMP_BOUND_START, DUMP_BOUND_AVG_EVERY) .EQ. 0) THEN
+                                          CALL TALLY_PARTICLE_TO_BOUNDARY(.TRUE., SEE_SINGLE_PARTICLE, IC, BOUNDCOLL)
+                                       END IF
+                                    END IF
+                                 END DO
+                              END IF
+                           END IF
+
+                           ! ===== Constant current control: accumulate current statistics =====
+                           IF (GRID_BC(FACE_PG)%IS_CONSTANT_CURRENT) THEN
+                              IF (BOOL_RADIAL_WEIGHTING) THEN
+                                 WEIGHT_RATIO = CELL_FNUM(particles(IP)%IC)
+                              ELSE
+                                 WEIGHT_RATIO = FNUM
+                              END IF
+
+                              CHARGE = SPECIES(particles(IP)%S_ID)%CHARGE
+                              WEIGHT_RATIO = WEIGHT_RATIO * SPECIES(particles(IP)%S_ID)%SPWT
+
+                              IF (CHARGE > 0.5d0) THEN
+                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION = &
+                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION + QE * CHARGE * WEIGHT_RATIO
+                              ELSE IF (CHARGE < -0.5d0) THEN
+                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC = &
+                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC + QE * CHARGE * WEIGHT_RATIO
+                              END IF
+
+                              IF (N_SEE_SECONDARY > 0) THEN
+                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE = &
+                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE + QE * DBLE(N_SEE_SECONDARY) * WEIGHT_RATIO
+                              END IF
+                           END IF
+
+                           IMPACT_ENERGY_EV = RELATIVISTIC_KINETIC_ENERGY( &
+                                             SPECIES(particles(IP)%S_ID)%MOLECULAR_MASS, &
+                                             particles(IP)%VX, particles(IP)%VY, particles(IP)%VZ) / QE
+
                            IF (GRID_BC(FACE_PG)%REACT) THEN
                               CALL WALL_REACT(particles, IP, REMOVE_PART(IP), FACE_PG)
                            END IF
 
-                           !VXPRE = particles(IP)%VX
-                           !VYPRE = particles(IP)%VY
-                           !VZPRE = particles(IP)%VZ
+                           IF (.NOT. REMOVE_PART(IP)) THEN
+                              IF (GRID_BC(FACE_PG)%PARTICLE_BC == ENERGY_CLL) THEN
+                                 IF (IMPACT_ENERGY_EV < GRID_BC(FACE_PG)%ENERGY_THRESHOLD_EV) THEN
+                                    REMOVE_PART(IP) = .TRUE.
+                                 END IF
+                              END IF
+                           END IF
 
-                           VDOTN = particles(IP)%VX*FACE_NORMAL(1) &
-                                 + particles(IP)%VY*FACE_NORMAL(2) &
-                                 + particles(IP)%VZ*FACE_NORMAL(3)
+                           IF (.NOT. REMOVE_PART(IP)) THEN
+                              VDOTN = particles(IP)%VX*FACE_NORMAL(1) &
+                                    + particles(IP)%VY*FACE_NORMAL(2) &
+                                    + particles(IP)%VZ*FACE_NORMAL(3)
 
-                           TANG1(1) = particles(IP)%VX - VDOTN*FACE_NORMAL(1)
-                           TANG1(2) = particles(IP)%VY - VDOTN*FACE_NORMAL(2)
-                           TANG1(3) = particles(IP)%VZ - VDOTN*FACE_NORMAL(3)
+                              TANG1(1) = particles(IP)%VX - VDOTN*FACE_NORMAL(1)
+                              TANG1(2) = particles(IP)%VY - VDOTN*FACE_NORMAL(2)
+                              TANG1(3) = particles(IP)%VZ - VDOTN*FACE_NORMAL(3)
 
-                           TANG1 = TANG1/NORM2(TANG1)
+                              IF (NORM2(TANG1) > 1.d-14) THEN
+                                 TANG1 = TANG1/NORM2(TANG1)
+                                 TANG2 = CROSS(FACE_NORMAL, TANG1)
+                              ELSE
+                                 TANG1 = FACE_TANG1
+                                 TANG2 = FACE_TANG2
+                              END IF
 
-                           TANG2 = CROSS(FACE_NORMAL, TANG1)
+                              VDOTTANG1 = particles(IP)%VX*TANG1(1) &
+                                        + particles(IP)%VY*TANG1(2) &
+                                        + particles(IP)%VZ*TANG1(3)
 
-                           VDOTTANG1 = particles(IP)%VX*TANG1(1) &
-                                     + particles(IP)%VY*TANG1(2) &
-                                     + particles(IP)%VZ*TANG1(3)
+                              S_ID = particles(IP)%S_ID
+                              WALL_TEMP = GRID_BC(FACE_PG)%WALL_TEMP
 
-                           S_ID = particles(IP)%S_ID
-                           WALL_TEMP = GRID_BC(FACE_PG)%WALL_TEMP
+                              VRM = SQRT(2.*KB*WALL_TEMP/SPECIES(S_ID)%MOLECULAR_MASS)
 
-                           VRM = SQRT(2.*KB*WALL_TEMP/SPECIES(S_ID)%MOLECULAR_MASS)
-
-                           ! Normal velocity for the CLL model
-                           RN = rf()
-                           DO WHILE (RN < 1.0D-13)
+                              ! Normal velocity for the CLL model
                               RN = rf()
-                           END DO
-                           R1 = SQRT(-GRID_BC(FACE_PG)%ACC_N*LOG(RN))
-                           THETA1 = 2.*PI*rf()
-                           DOT_NORM = VDOTN/VRM * SQRT(1 - GRID_BC(FACE_PG)%ACC_N)
-                           V_PERP = VRM * SQRT(R1*R1 + DOT_NORM*DOT_NORM + 2.*R1*DOT_NORM*COS(THETA1))
+                              DO WHILE (RN < 1.0D-13)
+                                 RN = rf()
+                              END DO
+                              R1 = SQRT(-GRID_BC(FACE_PG)%ACC_N*LOG(RN))
+                              THETA1 = 2.*PI*rf()
+                              DOT_NORM = VDOTN/VRM * SQRT(1 - GRID_BC(FACE_PG)%ACC_N)
+                              V_PERP = VRM * SQRT(R1*R1 + DOT_NORM*DOT_NORM + 2.*R1*DOT_NORM*COS(THETA1))
 
-                           ! Tangential velocity for the CLL model
-                           RN = rf()
-                           DO WHILE (RN < 1.0D-13)
+                              ! Tangential velocity for the CLL model
                               RN = rf()
-                           END DO         
-                           R2 = SQRT(-GRID_BC(FACE_PG)%ACC_T*LOG(RN))
-                           THETA2 = 2.*PI*rf()
-                           VTANGENT = VDOTTANG1/VRM * SQRT(1 - GRID_BC(FACE_PG)%ACC_T)
-                           V_TANG1 = VRM * (VTANGENT + R2 * COS(THETA2))
-                           V_TANG2 = VRM * R2 * SIN(THETA2)
+                              DO WHILE (RN < 1.0D-13)
+                                 RN = rf()
+                              END DO         
+                              R2 = SQRT(-GRID_BC(FACE_PG)%ACC_T*LOG(RN))
+                              THETA2 = 2.*PI*rf()
+                              VTANGENT = VDOTTANG1/VRM * SQRT(1 - GRID_BC(FACE_PG)%ACC_T)
+                              V_TANG1 = VRM * (VTANGENT + R2 * COS(THETA2))
+                              V_TANG2 = VRM * R2 * SIN(THETA2)
 
-                           CALL INTERNAL_ENERGY(SPECIES(S_ID)%ROTDOF, WALL_TEMP, EROT)
-                           CALL INTERNAL_ENERGY(SPECIES(S_ID)%VIBDOF, WALL_TEMP, EVIB)
+                              CALL INTERNAL_ENERGY(SPECIES(S_ID)%ROTDOF, WALL_TEMP, EROT)
+                              CALL INTERNAL_ENERGY(SPECIES(S_ID)%VIBDOF, WALL_TEMP, EVIB)
 
-                           particles(IP)%VX = V_PERP*FACE_NORMAL(1) &
-                                            + V_TANG1*TANG1(1) &
-                                            + V_TANG2*TANG2(1)
-                           particles(IP)%VY = V_PERP*FACE_NORMAL(2) &
-                                            + V_TANG1*TANG1(2) &
-                                            + V_TANG2*TANG2(2)
-                           particles(IP)%VZ = V_PERP*FACE_NORMAL(3) &
-                                            + V_TANG1*TANG1(3) &
-                                            + V_TANG2*TANG2(3)
-                           
-                           particles(IP)%EROT = EROT
-                           particles(IP)%EVIB = EVIB
+                              particles(IP)%VX = V_PERP*FACE_NORMAL(1) &
+                                               + V_TANG1*TANG1(1) &
+                                               + V_TANG2*TANG2(1)
+                              particles(IP)%VY = V_PERP*FACE_NORMAL(2) &
+                                               + V_TANG1*TANG1(2) &
+                                               + V_TANG2*TANG2(2)
+                              particles(IP)%VZ = V_PERP*FACE_NORMAL(3) &
+                                               + V_TANG1*TANG1(3) &
+                                               + V_TANG2*TANG2(3)
+                              
+                              particles(IP)%EROT = EROT
+                              particles(IP)%EVIB = EVIB
+                           END IF
 
                            !OPEN(66341, FILE='clldump', POSITION='append', STATUS='unknown', ACTION='write')
                            !WRITE(66341,*) VXPRE, ', ', VYPRE, ', ', VZPRE, ', ', &
@@ -1776,6 +1854,16 @@ MODULE timecycle
 
                         ! Tally reflected particle fluxes to boundary
                         IF (.NOT. REMOVE_PART(IP)) THEN
+                           ! Move the reflected particle a tiny distance back into
+                           ! the fluid domain and consume a tiny fraction of the
+                           ! remaining substep. This prevents pathological
+                           ! zero-time recollisions on the same wall.
+                           rfp = MIN(MAX(1.d-15, 1.d-9*DT), particles(IP)%DTRIM)
+                           IF (rfp > 0.d0) THEN
+                              CALL MOVE_PARTICLE(IP, rfp)
+                              particles(IP)%DTRIM = MAX(0.d0, particles(IP)%DTRIM - rfp)
+                           END IF
+
                            IF ((tID .GE. DUMP_GRID_START) .AND. (tID .NE. RESTART_TIMESTEP)) THEN
                               IF (MOD(tID-DUMP_BOUND_START, DUMP_BOUND_AVG_EVERY) .EQ. 0) THEN
                                  CALL TALLY_PARTICLE_TO_BOUNDARY(.TRUE., particles(IP), IC, BOUNDCOLL)
@@ -2246,9 +2334,14 @@ MODULE timecycle
       DO WHILE (IP .GE. 1)
 
          ! Is particle IP out of the domain? Then remove it!
-         IF (REMOVE_PART(IP)) THEN
-            CALL REMOVE_PARTICLE_ARRAY(IP, particles, NP_PROC)
-         ELSE IF (GRID_TYPE .NE. UNSTRUCTURED) THEN
+         IF (IP <= UBOUND(REMOVE_PART,1)) THEN
+            IF (REMOVE_PART(IP)) THEN
+               CALL REMOVE_PARTICLE_ARRAY(IP, particles, NP_PROC)
+               IP = IP - 1
+               CYCLE
+            END IF
+         END IF
+         IF (GRID_TYPE .NE. UNSTRUCTURED) THEN
             CALL CELL_FROM_POSITION(particles(IP)%X, particles(IP)%Y, IC)
             OLD_IC = particles(IP)%IC
             particles(IP)%IC = IC
@@ -2312,22 +2405,42 @@ MODULE timecycle
 
       REAL(KIND=8), DIMENSION(3), INTENT(OUT) :: V_NEW
       REAL(KIND=8), DIMENSION(3), INTENT(IN) :: V_OLD, E, B
-      REAL(KIND=8), DIMENSION(3) :: V_MINUS, V_PLUS, V_PRIME, T, S
+      REAL(KIND=8), DIMENSION(3) :: V_SAFE, U_OLD, U_MINUS, U_PLUS, U_PRIME, T, S
       REAL(KIND=8), INTENT(IN) :: DTIME, CHARGE, MASS
-      REAL(KIND=8) :: COULOMBCHARGE
+      REAL(KIND=8) :: COULOMBCHARGE, QMDT2, V2, U2, GAMMA_OLD, GAMMA_MINUS, GAMMA_NEW
+      REAL(KIND=8) :: SPEED_LIMIT
 
-      IF (CHARGE == 0.d0) THEN
+      IF (CHARGE == 0.d0 .OR. MASS <= 0.d0) THEN
          V_NEW = V_OLD
       ELSE
          COULOMBCHARGE = CHARGE * QE
-         V_MINUS = V_OLD + 0.5*COULOMBCHARGE*E/MASS*DTIME
+         QMDT2 = 0.5d0 * COULOMBCHARGE * DTIME / MASS
 
-         T = 0.5*COULOMBCHARGE*B/MASS*DTIME
-         V_PRIME = V_MINUS + CROSS(V_MINUS, T)
-         S = 2.*T/(1.+( T(1)*T(1) + T(2)*T(2) + T(3)*T(3) ))
-         V_PLUS = V_MINUS + CROSS(V_PRIME, S)
+         V_SAFE = V_OLD
+         V2 = V_SAFE(1)*V_SAFE(1) + V_SAFE(2)*V_SAFE(2) + V_SAFE(3)*V_SAFE(3)
+         SPEED_LIMIT = (1.d0 - 1.d-14) * C_LIGHT * C_LIGHT
+         IF (V2 >= SPEED_LIMIT) THEN
+            V_SAFE = V_SAFE * SQRT(SPEED_LIMIT / V2)
+            V2 = SPEED_LIMIT
+         END IF
 
-         V_NEW = V_PLUS + 0.5*COULOMBCHARGE*E/MASS*DTIME
+         ! Relativistic Boris push using proper velocity u = gamma*v.
+         GAMMA_OLD = RELATIVISTIC_GAMMA_FROM_V2(V2)
+         U_OLD = GAMMA_OLD * V_SAFE
+         U_MINUS = U_OLD + QMDT2 * E
+
+         U2 = U_MINUS(1)*U_MINUS(1) + U_MINUS(2)*U_MINUS(2) + U_MINUS(3)*U_MINUS(3)
+         GAMMA_MINUS = SQRT(1.d0 + U2 / (C_LIGHT*C_LIGHT))
+
+         T = QMDT2 * B / GAMMA_MINUS
+         U_PRIME = U_MINUS + CROSS(U_MINUS, T)
+         S = 2.d0*T/(1.d0 + (T(1)*T(1) + T(2)*T(2) + T(3)*T(3)))
+         U_PLUS = U_MINUS + CROSS(U_PRIME, S)
+
+         U_PLUS = U_PLUS + QMDT2 * E
+         U2 = U_PLUS(1)*U_PLUS(1) + U_PLUS(2)*U_PLUS(2) + U_PLUS(3)*U_PLUS(3)
+         GAMMA_NEW = SQRT(1.d0 + U2 / (C_LIGHT*C_LIGHT))
+         V_NEW = U_PLUS / GAMMA_NEW
       END IF
 
    END SUBROUTINE
@@ -2413,44 +2526,30 @@ MODULE timecycle
 
       IMPLICIT NONE
 
-      INTEGER :: IP, I, J, S_ID
-      REAL(KIND=8) :: VX, VY, VZ, MASS, KE_JOULES, KE_EV
-      LOGICAL :: SHOULD_REMOVE
+      INTEGER :: IP, S_ID
+      REAL(KIND=8) :: V2
 
-      ! Loop through all particles (backwards to safely remove)
+      IF (.NOT. ALLOCATED(ENERGY_REMOVAL_ACTIVE)) RETURN
+
+      ! Loop through all particles backwards. For monitored species, compare
+      ! v^2 with a precomputed relativistic threshold instead of recomputing
+      ! kinetic energy and scanning every rule for every particle.
       IP = NP_PROC
       DO WHILE (IP .GE. 1)
 
          S_ID = particles(IP)%S_ID
-         VX = particles(IP)%VX
-         VY = particles(IP)%VY
-         VZ = particles(IP)%VZ
-         MASS = SPECIES(S_ID)%MOLECULAR_MASS
-
-         ! Calculate kinetic energy in Joules: KE = 0.5 * m * v^2
-         KE_JOULES = 0.5d0 * MASS * (VX*VX + VY*VY + VZ*VZ)
-
-         ! Convert to eV: 1 eV = 1.602176634e-19 J
-         KE_EV = KE_JOULES / QE
-
-         ! Check if this particle should be removed based on any rule
-         SHOULD_REMOVE = .FALSE.
-         DO I = 1, N_ENERGY_REMOVAL_RULES
-            DO J = 1, ENERGY_REMOVAL_RULES(I)%N_SPECIES
-               IF (ENERGY_REMOVAL_RULES(I)%SPECIES_IDS(J) == S_ID) THEN
-                  ! This species is monitored by this rule
-                  IF (KE_EV .LT. ENERGY_REMOVAL_RULES(I)%ENERGY_THRESHOLD_EV) THEN
-                     SHOULD_REMOVE = .TRUE.
-                     EXIT
-                  END IF
-               END IF
-            END DO
-            IF (SHOULD_REMOVE) EXIT
-         END DO
-
-         ! Remove particle if kinetic energy is below threshold
-         IF (SHOULD_REMOVE) THEN
+         IF (S_ID < 1 .OR. S_ID > N_SPECIES) THEN
             CALL REMOVE_PARTICLE_ARRAY(IP, particles, NP_PROC)
+            IP = IP - 1
+            CYCLE
+         END IF
+
+         IF (ENERGY_REMOVAL_ACTIVE(S_ID)) THEN
+            V2 = particles(IP)%VX*particles(IP)%VX + particles(IP)%VY*particles(IP)%VY + &
+                 particles(IP)%VZ*particles(IP)%VZ
+            IF (V2 .LT. ENERGY_REMOVAL_THRESHOLD_V2(S_ID)) THEN
+               CALL REMOVE_PARTICLE_ARRAY(IP, particles, NP_PROC)
+            END IF
          END IF
 
          IP = IP - 1

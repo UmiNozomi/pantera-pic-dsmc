@@ -1005,7 +1005,92 @@ CONTAINS
    END SUBROUTINE DUPLICATE_PARTICLES
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   ! SUBROUTINE DUMP_TRAJECTORY_FILE -> dumps particle trajectory to file !
+   ! SUBROUTINE MARK_TRAJECTORY_PARTICLES -> select existing particles to trace !
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   SUBROUTINE MARK_TRAJECTORY_PARTICLES(TIMESTEP)
+
+      IMPLICIT NONE
+
+      INTEGER, INTENT(IN) :: TIMESTEP
+      INTEGER :: IP, IS, TRAJECTORY_EVERY
+      INTEGER :: LOCAL_MARKED, LOCAL_CANDIDATES, LOCAL_TARGET, LOCAL_NEED
+      INTEGER :: LOCAL_CANDIDATE_INDEX
+      INTEGER :: MARKED_LOCAL, MARKED_TOTAL
+      REAL(KIND=8) :: SELECT_PROB
+      LOGICAL, SAVE :: TRAJECTORY_ORIGIN_SET = .FALSE.
+
+      IF (DUMP_TRAJECTORY_START < 0) RETURN
+      IF (TIMESTEP < DUMP_TRAJECTORY_START) RETURN
+      IF (DUMP_TRAJECTORY_NUMBER <= 0) RETURN
+
+      ! If the requested start is before the actual first simulated step, align
+      ! the trajectory clock to the first available step so the first record is
+      ! written immediately.
+      IF (.NOT. TRAJECTORY_ORIGIN_SET) THEN
+         DUMP_TRAJECTORY_START = TIMESTEP
+         TRAJECTORY_ORIGIN_SET = .TRUE.
+      END IF
+
+      TRAJECTORY_EVERY = DUMP_TRAJECTORY_EVERY
+      IF (TRAJECTORY_EVERY <= 0) TRAJECTORY_EVERY = DUMP_PART_EVERY
+      IF (TRAJECTORY_EVERY <= 0) TRAJECTORY_EVERY = 1
+      IF (MOD(TIMESTEP - DUMP_TRAJECTORY_START, TRAJECTORY_EVERY) /= 0) RETURN
+
+      MARKED_LOCAL = 0
+
+      ! DUMP_TRAJECTORY_NUMBER is interpreted as the local target per MPI
+      ! rank and per species. Each rank samples uniformly from its own local
+      ! particles, avoiding global-order bias and any non-divisible MPI target.
+      LOCAL_TARGET = DUMP_TRAJECTORY_NUMBER
+
+      DO IS = 1, N_SPECIES
+         LOCAL_MARKED = 0
+         LOCAL_CANDIDATES = 0
+         DO IP = 1, NP_PROC
+            IF (particles(IP)%S_ID == IS) THEN
+               IF (particles(IP)%DUMP_TRAJ) THEN
+                  LOCAL_MARKED = LOCAL_MARKED + 1
+               ELSE
+                  LOCAL_CANDIDATES = LOCAL_CANDIDATES + 1
+               END IF
+            END IF
+         END DO
+
+         LOCAL_NEED = LOCAL_TARGET - LOCAL_MARKED
+         IF (LOCAL_NEED <= 0) CYCLE
+         IF (LOCAL_CANDIDATES <= 0) CYCLE
+         LOCAL_NEED = MIN(LOCAL_NEED, LOCAL_CANDIDATES)
+
+         ! Uniform local sampling without replacement.  At each candidate, choose
+         ! it with probability remaining_needed / remaining_candidates.
+         LOCAL_CANDIDATE_INDEX = 0
+         DO IP = 1, NP_PROC
+            IF (particles(IP)%S_ID == IS .AND. .NOT. particles(IP)%DUMP_TRAJ) THEN
+               LOCAL_CANDIDATE_INDEX = LOCAL_CANDIDATE_INDEX + 1
+               SELECT_PROB = DBLE(LOCAL_NEED) / DBLE(LOCAL_CANDIDATES - LOCAL_CANDIDATE_INDEX + 1)
+               IF (rf() <= SELECT_PROB) THEN
+                  particles(IP)%DUMP_TRAJ = .TRUE.
+                  MARKED_LOCAL = MARKED_LOCAL + 1
+                  LOCAL_NEED = LOCAL_NEED - 1
+                  IF (LOCAL_NEED <= 0) EXIT
+               END IF
+            END IF
+         END DO
+      END DO
+
+      MARKED_TOTAL = 0
+      CALL MPI_REDUCE(MARKED_LOCAL, MARKED_TOTAL, 1, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      IF (PROC_ID == 0 .AND. MARKED_TOTAL > 0) THEN
+         WRITE(*,'(A,I0,A,I0,A,I0,A)') '> Trajectory dump: randomly added ', MARKED_TOTAL, &
+              ' tracer particles at timestep ', TIMESTEP, ' (local target ', &
+              LOCAL_TARGET, ' per rank/species).'
+      END IF
+
+   END SUBROUTINE MARK_TRAJECTORY_PARTICLES
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! SUBROUTINE DUMP_TRAJECTORY_FILE -> dumps selected particle trajectory to CSV !
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
    SUBROUTINE DUMP_TRAJECTORY_FILE(TIMESTEP)
@@ -1014,26 +1099,47 @@ CONTAINS
 
       INTEGER, INTENT(IN) :: TIMESTEP
       CHARACTER(LEN=512)  :: filename
-      INTEGER :: IP
+      INTEGER :: IP, IS, TRAJECTORY_EVERY, LOCAL_TRAJ_COUNT
+      LOGICAL :: FILE_EXISTS
 
-      DO IP = 1, NP_PROC
-         IF (particles(IP)%DUMP_TRAJ) THEN
-            !WRITE(*,*) 'Writing trajectory file for particle with ID ', particles(IP)%ID
-            WRITE(filename, "(A,A,I0.15)") TRIM(ADJUSTL(TRAJDUMP_SAVE_PATH)), "trajectory_", particles(IP)%ID ! Compose filename
-            ! Open file for writing
-            IF (BOOL_BINARY_OUTPUT) THEN
-               OPEN(1610, FILE=filename, ACCESS='SEQUENTIAL', POSITION='APPEND', FORM='UNFORMATTED', &
-               STATUS='UNKNOWN', CONVERT='BIG_ENDIAN', RECL=56)
-               WRITE(1610) TIMESTEP, particles(IP)%S_ID, particles(IP)%X, particles(IP)%Y, particles(IP)%Z, &
-               particles(IP)%VX, particles(IP)%VY, particles(IP)%VZ
-               CLOSE(1610)
-            ELSE
-               OPEN(1610, FILE=filename, POSITION='APPEND')
-               WRITE(1610,*) TIMESTEP, particles(IP)%S_ID, particles(IP)%X, particles(IP)%Y, particles(IP)%Z, &
-               particles(IP)%VX, particles(IP)%VY, particles(IP)%VZ
-               CLOSE(1610)
-            END IF   
+      IF (DUMP_TRAJECTORY_START >= 0) THEN
+         IF (TIMESTEP < DUMP_TRAJECTORY_START) RETURN
+         TRAJECTORY_EVERY = DUMP_TRAJECTORY_EVERY
+         IF (TRAJECTORY_EVERY <= 0) TRAJECTORY_EVERY = DUMP_PART_EVERY
+         IF (TRAJECTORY_EVERY <= 0) TRAJECTORY_EVERY = 1
+         IF (MOD(TIMESTEP - DUMP_TRAJECTORY_START, TRAJECTORY_EVERY) /= 0) RETURN
+      END IF
+
+      ! Write one CSV append per species/rank instead of opening and closing the
+      ! same file for every tracked particle. This matters a lot on WSL/Windows
+      ! filesystems and keeps trajectory diagnostics from dominating runtime.
+      DO IS = 1, N_SPECIES
+         LOCAL_TRAJ_COUNT = 0
+         DO IP = 1, NP_PROC
+            IF (particles(IP)%DUMP_TRAJ .AND. particles(IP)%S_ID == IS) THEN
+               LOCAL_TRAJ_COUNT = LOCAL_TRAJ_COUNT + 1
+            END IF
+         END DO
+         IF (LOCAL_TRAJ_COUNT <= 0) CYCLE
+
+         WRITE(filename, "(A,A,I0.3,A6,I0.5,A4)") TRIM(ADJUSTL(TRAJDUMP_SAVE_PATH)), &
+              "trajectory_species_", IS, "_proc_", PROC_ID, ".csv"
+         INQUIRE(FILE=filename, EXIST=FILE_EXISTS)
+         OPEN(1610, FILE=filename, POSITION='APPEND', STATUS='UNKNOWN', ACTION='WRITE')
+         IF (.NOT. FILE_EXISTS) THEN
+            WRITE(1610,'(A)') 'timestep,time_s,particle_id,species_id,x,y,z,vx,vy,vz'
          END IF
+
+         DO IP = 1, NP_PROC
+            IF (particles(IP)%DUMP_TRAJ .AND. particles(IP)%S_ID == IS) THEN
+               WRITE(1610,'(I0,A,ES24.16E3,A,I0,A,I0,A,ES24.16E3,A,ES24.16E3,A,ES24.16E3,A, &
+                    ES24.16E3,A,ES24.16E3,A,ES24.16E3)') &
+                    TIMESTEP, ',', TIMESTEP*DT, ',', particles(IP)%ID, ',', particles(IP)%S_ID, ',', &
+                    particles(IP)%X, ',', particles(IP)%Y, ',', particles(IP)%Z, ',', &
+                    particles(IP)%VX, ',', particles(IP)%VY, ',', particles(IP)%VZ
+            END IF
+         END DO
+         CLOSE(1610)
       END DO
 
    END SUBROUTINE DUMP_TRAJECTORY_FILE

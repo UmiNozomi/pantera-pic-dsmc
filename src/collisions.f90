@@ -935,10 +935,10 @@ MODULE collisions
       REAL(KIND=8), INTENT(IN)  :: ECOLL, TRDOF
       REAL(KIND=8) :: EI, R1, R2
 
-      IF (TRDOF .LT. 1.d-6) THEN
-         EI = ECOLL
-      ELSE IF (INTDOF == 0) THEN
+      IF ((ECOLL .LE. 0.d0) .OR. (INTDOF == 0)) THEN
          EI = 0.d0
+      ELSE IF (TRDOF .LT. 1.d-6) THEN
+         EI = ECOLL
       ELSE
          DO
             R1 = rf()
@@ -982,8 +982,9 @@ MODULE collisions
       PI2  = 2.*PI
 
       MRED  = M1*M2/(M1+M2)
-      ! Relative velocity from given translational energy
-      G = SQRT(2.*ECOLL/MRED)
+      ! Relative velocity from given translational energy. Roundoff can leave
+      ! a tiny negative residual after internal-energy sampling; clamp to avoid NaNs.
+      G = SQRT(MAX(0.d0, 2.d0*ECOLL/MRED))
 
       COSPHI = 2.*rf()-1.
       SINPHI = SQRT(1-COSPHI*COSPHI)
@@ -1635,7 +1636,7 @@ MODULE collisions
       REAL(KIND=8) :: PI2
       REAL(KIND=8), DIMENSION(3) :: C1, C2
       REAL(KIND=8) :: VR2, VR, MRED, M1, M2
-      REAL(KIND=8) :: EI, ETR, ECOLL, TOTDOF, EA, EROT, EVIB
+      REAL(KIND=8) :: EI, ETR, E_LOOKUP, ECOLL, TOTDOF, EA, EA_CM, EROT, EVIB
       TYPE(PARTICLE_DATA_STRUCTURE) :: NEWparticle
       REAL(KIND=8) :: NULL_COLL_FREQ, P_NULL, R_SELECT, P_CUMULATED
       LOGICAL :: HAS_REACTED
@@ -1653,7 +1654,10 @@ MODULE collisions
          REACTIONS(JR)%COUNTS = 0
       END DO
 
-      NULL_COLL_FREQ = MCC_BG_DENS*2e-13
+      ! The null-collision upper bound must exceed sum(sigma*v) for every
+      ! enabled channel. Electron-H2 ionization/excitation can reach
+      ! O(1e-12) m3/s, so the old 2e-13 cap clipped real collisions.
+      NULL_COLL_FREQ = MCC_BG_DENS*2.d-12
       P_NULL = 1 - EXP(-DT*NULL_COLL_FREQ)
       !P_NULL = DT*NULL_COLL_FREQ
       IF (P_NULL > 1) THEN
@@ -1703,8 +1707,16 @@ MODULE collisions
             M2    = SPECIES(SP_ID2)%MOLECULAR_MASS
             MRED  = M1*M2/(M1+M2)
    
-            ! Compute the kinetic energy in the center-of-mass frame (aka collision energy)
-            ETR = 0.5*MRED*VR2
+            ! Center-of-mass energy is kept for the post-collision kinematics.
+            ETR = RELATIVISTIC_KINETIC_ENERGY(MRED, C2(1) - particles(JP1)%VX, &
+                                             C2(2) - particles(JP1)%VY, &
+                                             C2(3) - particles(JP1)%VZ)
+            ! Heavy-particle cross-section tables from Phelps/Tabata are tabulated
+            ! versus projectile laboratory energy for an H2 target at rest. Use
+            ! projectile-in-target-frame energy for lookup and threshold checks.
+            E_LOOKUP = RELATIVISTIC_KINETIC_ENERGY(M1, C2(1) - particles(JP1)%VX, &
+                                                  C2(2) - particles(JP1)%VY, &
+                                                  C2(3) - particles(JP1)%VZ)
 
             P_CUMULATED = 0
 
@@ -1717,10 +1729,12 @@ MODULE collisions
                IF ((REACTIONS(JR)%R1_SP_ID .NE. SP_ID1) .OR. (REACTIONS(JR)%R2_SP_ID .NE. SP_ID2)) CYCLE
    
                EA = REACTIONS(JR)%EA
-               IF (ETR .LE. EA) CYCLE
+               IF (E_LOOKUP .LE. EA) CYCLE
+               EA_CM = EA*M2/(M1 + M2)
+               IF ((.NOT. REACTIONS(JR)%IS_CEX) .AND. (ETR .LE. EA_CM)) CYCLE
 
                IF (REACTIONS(JR)%TYPE == LXCAT) THEN
-                  SIGMA_R = INTERP_CS(ETR, REACTIONS(JR)%TABLE_ENERGY, REACTIONS(JR)%TABLE_CS)
+                  SIGMA_R = INTERP_CS(E_LOOKUP, REACTIONS(JR)%TABLE_ENERGY, REACTIONS(JR)%TABLE_CS)
                   !P_CUMULATED = P_CUMULATED + BG_NRHO*SIGMA_R*VR / NULL_COLL_FREQ
                   P_CUMULATED = P_CUMULATED + (1. -EXP(-BG_NRHO*SIGMA_R*VR*DT)) / P_NULL
                ELSE
@@ -1761,7 +1775,7 @@ MODULE collisions
 
                   !WRITE(*,*) 'Reacting!'
                   ! React
-                  ECOLL = ETR - EA
+                  ECOLL = MAX(0.d0, ETR - EA_CM)
 
                   ! Use R1 as P1 and assign internal energy to it.
                   ! Use R2 as P2 (or P2+P3) (Set R2 as the molecule that dissociates in P2+P3)
@@ -1918,7 +1932,7 @@ MODULE collisions
                               
                         
                         CALL INIT_PARTICLE(particles(JP3)%X,particles(JP3)%Y,particles(JP3)%Z, &
-                        C2(1),C2(2),C2(3),EROT,EVIB,P3_SP_ID,particles(JP3)%IC,DT, NEWparticle)
+                        C2(1),C2(2),C2(3),EROT,EVIB,P4_SP_ID,particles(JP3)%IC,DT, NEWparticle)
                         !WRITE(*,*) 'Should be adding particle!'
                         CALL ADD_PARTICLE_ARRAY(NEWparticle, NP_PROC, particles)
                         

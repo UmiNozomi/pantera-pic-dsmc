@@ -3586,6 +3586,8 @@ MODULE fields
                            END IF
                         END IF
 
+                        N_SEE_SECONDARY = 0
+
                         ! Apply particle boundary condition
                         IF (GRID_BC(FACE_PG)%PARTICLE_BC == SPECULAR) THEN
                            ! Process secondary electron emission before surface interaction
@@ -4078,9 +4080,14 @@ MODULE fields
          DO WHILE (IP .GE. 1)
 
             ! Is particle IP out of the domain? Then remove it!
-            IF (REMOVE_PART(IP)) THEN
-               CALL REMOVE_PARTICLE_ARRAY(IP, part_adv, NP_PROC)
-            ELSE IF (GRID_TYPE .NE. UNSTRUCTURED) THEN
+            IF (IP <= UBOUND(REMOVE_PART,1)) THEN
+               IF (REMOVE_PART(IP)) THEN
+                  CALL REMOVE_PARTICLE_ARRAY(IP, part_adv, NP_PROC)
+                  IP = IP - 1
+                  CYCLE
+               END IF
+            END IF
+            IF (GRID_TYPE .NE. UNSTRUCTURED) THEN
                CALL CELL_FROM_POSITION(part_adv(IP)%X, part_adv(IP)%Y, IC)
                OLD_IC = part_adv(IP)%IC
                part_adv(IP)%IC = IC
@@ -4330,12 +4337,14 @@ MODULE fields
       INTEGER, INTENT(IN) :: FACE_PG
       LOGICAL, INTENT(OUT) :: REMOVE
       INTEGER :: JS, JR, JP, N_REAC
-      REAL(KIND=8) :: PROB_SCALE, VEL_SCALE
+      REAL(KIND=8) :: PROB_SCALE, VEL_SCALE, IMPACT_ENERGY_EV
       TYPE(WALL_REACTIONS_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: REACTIONS_TO_USE
 
       JS = part_adv(IP)%S_ID
       PROB_SCALE = 1.
       REMOVE = .FALSE.
+      IMPACT_ENERGY_EV = RELATIVISTIC_KINETIC_ENERGY(SPECIES(JS)%MOLECULAR_MASS, &
+                       part_adv(IP)%VX, part_adv(IP)%VY, part_adv(IP)%VZ) / QE
       
       ! Determine which reactions to use: boundary-specific or global
       IF (FACE_PG > 0 .AND. FACE_PG <= N_GRID_BC) THEN
@@ -4365,6 +4374,8 @@ MODULE fields
       
       DO JR = 1, N_REAC
          IF (REACTIONS_TO_USE(JR)%R_SP_ID == JS) THEN
+            IF (IMPACT_ENERGY_EV < REACTIONS_TO_USE(JR)%E_MIN_EV .OR. &
+                IMPACT_ENERGY_EV > REACTIONS_TO_USE(JR)%E_MAX_EV) CYCLE
             IF ( rf() .LE. REACTIONS_TO_USE(JR)%PROB/PROB_SCALE ) THEN
                
                IF (REACTIONS_TO_USE(JR)%N_PROD == 0) THEN
@@ -6636,9 +6647,14 @@ MODULE fields
          DO WHILE (IP .GE. 1)
 
             ! Is particle IP out of the domain? Then remove it!
-            IF (REMOVE_PART(IP)) THEN
-               CALL REMOVE_PARTICLE_ARRAY(IP, part_adv, NP_PROC)
-            ELSE IF (GRID_TYPE .NE. UNSTRUCTURED) THEN
+            IF (IP <= UBOUND(REMOVE_PART,1)) THEN
+               IF (REMOVE_PART(IP)) THEN
+                  CALL REMOVE_PARTICLE_ARRAY(IP, part_adv, NP_PROC)
+                  IP = IP - 1
+                  CYCLE
+               END IF
+            END IF
+            IF (GRID_TYPE .NE. UNSTRUCTURED) THEN
                CALL CELL_FROM_POSITION(part_adv(IP)%X, part_adv(IP)%Y, IC)
                OLD_IC = part_adv(IP)%IC
                part_adv(IP)%IC = IC
@@ -6907,12 +6923,14 @@ MODULE fields
    
       IMPLICIT NONE
       
-      INTEGER :: IPG, I_WINDOW
+      INTEGER :: IPG, I_WINDOW, N_VALID_SAMPLES, CONTROL_INTERVAL_STEPS
       REAL(KIND=8) :: LOCAL_CHARGE_ION, LOCAL_CHARGE_ELEC, LOCAL_CHARGE_SEE
       REAL(KIND=8) :: GLOBAL_CHARGE_ION, GLOBAL_CHARGE_ELEC, GLOBAL_CHARGE_SEE
       REAL(KIND=8) :: CURRENT_ION, CURRENT_ELEC, CURRENT_SEE, CURRENT_TOTAL
       REAL(KIND=8) :: SMOOTHED_CURRENT, CURRENT_ERROR, ERROR_DERIVATIVE
-      REAL(KIND=8) :: PID_OUTPUT, NEW_VOLTAGE, PID_SIGN
+      REAL(KIND=8) :: PID_OUTPUT, NEW_VOLTAGE, PID_SIGN, CONTROL_DT
+      REAL(KIND=8) :: CURRENT_RATIO, I_BLEND, BLEND_X, KI_EFFECTIVE
+      LOGICAL :: JUST_SWITCHED_TO_CC
       
       ! Loop over all boundaries
       DO IPG = 1, N_GRID_BC
@@ -6947,24 +6965,50 @@ MODULE fields
          END IF
          
          I_WINDOW = GRID_BC(IPG)%WINDOW_INDEX
+         GRID_BC(IPG)%WINDOW_SAMPLE_COUNT = MIN(GRID_BC(IPG)%WINDOW_SAMPLE_COUNT + 1, &
+                                                GRID_BC(IPG)%SLIDING_WINDOW_SIZE)
+         GRID_BC(IPG)%STEPS_SINCE_PID_UPDATE = GRID_BC(IPG)%STEPS_SINCE_PID_UPDATE + 1
          GRID_BC(IPG)%CURRENT_WINDOW_ION(I_WINDOW) = CURRENT_ION
          GRID_BC(IPG)%CURRENT_WINDOW_ELEC(I_WINDOW) = CURRENT_ELEC
          GRID_BC(IPG)%CURRENT_WINDOW_SEE(I_WINDOW) = CURRENT_SEE
          
-         ! Compute smoothed current (average of window)
+         N_VALID_SAMPLES = MAX(1, GRID_BC(IPG)%WINDOW_SAMPLE_COUNT)
+
+         ! Compute smoothed current (average of valid samples in window)
          SMOOTHED_CURRENT = SUM(GRID_BC(IPG)%CURRENT_WINDOW_ION) + &
                            SUM(GRID_BC(IPG)%CURRENT_WINDOW_ELEC) + &
                            SUM(GRID_BC(IPG)%CURRENT_WINDOW_SEE)
-         SMOOTHED_CURRENT = SMOOTHED_CURRENT / DBLE(GRID_BC(IPG)%SLIDING_WINDOW_SIZE)
+         SMOOTHED_CURRENT = SMOOTHED_CURRENT / DBLE(N_VALID_SAMPLES)
+
+         ! Do not act on the controller until a full averaging window has been collected.
+         IF (GRID_BC(IPG)%WINDOW_SAMPLE_COUNT < GRID_BC(IPG)%SLIDING_WINDOW_SIZE) THEN
+            IF (.NOT. GRID_BC(IPG)%CC_MODE_ACTIVE) THEN
+               GRID_BC(IPG)%WALL_POTENTIAL = GRID_BC(IPG)%INITIAL_VOLTAGE
+            END IF
+            CYCLE
+         END IF
+
+         ! Update the controller once per completed averaging window.
+         IF (GRID_BC(IPG)%STEPS_SINCE_PID_UPDATE < GRID_BC(IPG)%SLIDING_WINDOW_SIZE) THEN
+            IF (.NOT. GRID_BC(IPG)%CC_MODE_ACTIVE) THEN
+               GRID_BC(IPG)%WALL_POTENTIAL = GRID_BC(IPG)%INITIAL_VOLTAGE
+            END IF
+            CYCLE
+         END IF
+
+         CONTROL_INTERVAL_STEPS = GRID_BC(IPG)%STEPS_SINCE_PID_UPDATE
+         CONTROL_DT = DT * DBLE(CONTROL_INTERVAL_STEPS)
+         GRID_BC(IPG)%STEPS_SINCE_PID_UPDATE = 0
          
          ! ===== Step 3: State Machine =====
+         JUST_SWITCHED_TO_CC = .FALSE.
          IF (.NOT. GRID_BC(IPG)%CC_MODE_ACTIVE) THEN
             ! CV Mode: Check if we should switch to CC mode
             IF (ABS(SMOOTHED_CURRENT) >= ABS(GRID_BC(IPG)%TARGET_CURRENT)) THEN
                GRID_BC(IPG)%CC_MODE_ACTIVE = .TRUE.
+               JUST_SWITCHED_TO_CC = .TRUE.
                ! Initialize PID state for bumpless transfer
                GRID_BC(IPG)%ERROR_INTEGRAL = 0.d0
-               GRID_BC(IPG)%ERROR_PREV = 0.d0
                IF (PROC_ID == 0) THEN
                   WRITE(*,*) '> Constant current BC switched to CC mode at timestep', tID
                   WRITE(*,*) '  Boundary: ', TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME)
@@ -6980,16 +7024,36 @@ MODULE fields
           IF (GRID_BC(IPG)%CC_MODE_ACTIVE) THEN
              ! Compute error (target - measured)
              CURRENT_ERROR = GRID_BC(IPG)%TARGET_CURRENT - SMOOTHED_CURRENT
+
+             ! Anti-windup / PI scheduling:
+             ! stay in P-only mode while the measured current is still far from the target,
+             ! then smoothly introduce integral action as |I| approaches |I_target|.
+             IF (ABS(GRID_BC(IPG)%TARGET_CURRENT) > 1.d-20) THEN
+                CURRENT_RATIO = ABS(SMOOTHED_CURRENT) / ABS(GRID_BC(IPG)%TARGET_CURRENT)
+             ELSE
+                CURRENT_RATIO = 1.d0
+             END IF
+
+             BLEND_X = (CURRENT_RATIO - GRID_BC(IPG)%PID_I_ACTIVATE_RATIO) / &
+                       (GRID_BC(IPG)%PID_I_FULL_RATIO - GRID_BC(IPG)%PID_I_ACTIVATE_RATIO)
+             BLEND_X = MAX(0.d0, MIN(1.d0, BLEND_X))
+             I_BLEND = BLEND_X * BLEND_X * (3.d0 - 2.d0 * BLEND_X)
+             KI_EFFECTIVE = GRID_BC(IPG)%PID_KI * I_BLEND
              
              ! Update integral term
-             GRID_BC(IPG)%ERROR_INTEGRAL = GRID_BC(IPG)%ERROR_INTEGRAL + CURRENT_ERROR * DT
+             GRID_BC(IPG)%ERROR_INTEGRAL = GRID_BC(IPG)%ERROR_INTEGRAL + &
+                                           I_BLEND * CURRENT_ERROR * CONTROL_DT
              
              ! Compute derivative term
-             ERROR_DERIVATIVE = (CURRENT_ERROR - GRID_BC(IPG)%ERROR_PREV) / DT
+             IF (JUST_SWITCHED_TO_CC) THEN
+                ERROR_DERIVATIVE = 0.d0
+             ELSE
+                ERROR_DERIVATIVE = (CURRENT_ERROR - GRID_BC(IPG)%ERROR_PREV) / CONTROL_DT
+             END IF
              
              ! PID formula
              PID_OUTPUT = GRID_BC(IPG)%PID_KP * CURRENT_ERROR + &
-                         GRID_BC(IPG)%PID_KI * GRID_BC(IPG)%ERROR_INTEGRAL + &
+                         KI_EFFECTIVE * GRID_BC(IPG)%ERROR_INTEGRAL + &
                          GRID_BC(IPG)%PID_KD * ERROR_DERIVATIVE
              
              ! Determine PID sign based on voltage polarity

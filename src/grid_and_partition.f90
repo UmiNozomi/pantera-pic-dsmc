@@ -813,6 +813,7 @@ MODULE grid_and_partition
                      READ(LINE,*) ELEM_TYPE, VLIST2
                      
                      VLIST2 = VLIST2 + 1
+                     IF (ANY(VLIST2 < 1) .OR. ANY(VLIST2 > U1D_GRID%NUM_NODES)) CYCLE
 
                      JN = VLIST2(1)
                      IF (N_CELLS_WITH_NODE(JN) > 0) THEN
@@ -1229,6 +1230,7 @@ MODULE grid_and_partition
                      READ(LINE,*) ELEM_TYPE, VLIST2
                      
                      VLIST2 = VLIST2 + 1
+                     IF (ANY(VLIST2 < 1) .OR. ANY(VLIST2 > U2D_GRID%NUM_NODES)) CYCLE
 
                      JN = VLIST2(1)
                      IF (N_CELLS_WITH_NODE(JN) > 0) THEN
@@ -1258,6 +1260,7 @@ MODULE grid_and_partition
                      READ(LINE,*) ELEM_TYPE, VLIST3
                      
                      VLIST3 = VLIST3 + 1
+                     IF (ANY(VLIST3 < 1) .OR. ANY(VLIST3 > U2D_GRID%NUM_NODES)) CYCLE
 
                      JN = VLIST3(1)
                      IF (N_CELLS_WITH_NODE(JN) > 0) THEN

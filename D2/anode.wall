@@ -1,0 +1,113 @@
+! Energy-Dependent wall reactions for the anode.
+! Format:
+!   reactant --> product
+!   probability  E_min_eV  E_max_eV
+!
+! Philosophy:
+! - low-energy particles are mostly absorbed
+! - higher-energy ions can be neutralized and then reflected by energy_cll
+! - reflection probability is kept moderate to avoid heavy-particle buildup
+
+H2+ --> none
+1.0  0.0   30.0
+
+H2+ --> none
+0.95 30.0  300.0
+H2+ --> H2
+0.05 30.0  300.0
+
+H2+ --> none
+0.98 300.0 3000.0
+H2+ --> H2
+0.02 300.0 3000.0
+
+H2+ --> none
+0.992 3000.0 1.0e99
+H2+ --> H2
+0.008 3000.0 1.0e99
+
+
+H3+ --> none
+1.0  0.0   30.0
+
+H3+ --> none
+0.97 30.0  300.0
+H3+ --> H
+0.03 30.0  300.0
+
+H3+ --> none
+0.988 300.0 3000.0
+H3+ --> H
+0.012 300.0 3000.0
+
+H3+ --> none
+0.995 3000.0 1.0e99
+H3+ --> H
+0.005 3000.0 1.0e99
+
+
+H+ --> none
+1.0  0.0   30.0
+
+H+ --> none
+0.96 30.0  300.0
+H+ --> H
+0.04 30.0  300.0
+
+H+ --> none
+0.985 300.0 3000.0
+H+ --> H
+0.015 300.0 3000.0
+
+H+ --> none
+0.993 3000.0 1.0e99
+H+ --> H
+0.007 3000.0 1.0e99
+
+
+H --> none
+1.0  0.0   20.0
+
+H --> none
+0.975 20.0  100.0
+H --> H
+0.025 20.0  100.0
+
+H --> none
+0.990 100.0 3000.0
+H --> H
+0.010 100.0 3000.0
+
+H --> none
+0.996 3000.0 1.0e99
+H --> H
+0.004 3000.0 1.0e99
+
+
+H2 --> none
+1.0  0.0   20.0
+
+H2 --> none
+0.978 20.0  100.0
+H2 --> H2
+0.022 20.0  100.0
+
+H2 --> none
+0.991 100.0 3000.0
+H2 --> H2
+0.009 100.0 3000.0
+
+H2 --> none
+0.996 3000.0 1.0e99
+H2 --> H2
+0.004 3000.0 1.0e99
+
+
+e- --> none
+1.0  0.0   15.0
+
+e- --> none
+0.95 15.0  80.0
+
+e- --> none
+0.85 80.0  1.0e99

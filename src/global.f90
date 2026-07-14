@@ -35,6 +35,7 @@ MODULE global
    REAL(KIND=8) :: QE   = 1.602176634d-19                ! https://physics.nist.gov/cgi-bin/cuu/Value?e
    REAL(KIND=8) :: NA   = 6.02214076e23                  ! https://physics.nist.gov/cgi-bin/cuu/Value?na
    REAL(KIND=8) :: ME   = 9.1093837139d-31               ! https://physics.nist.gov/cgi-bin/cuu/Value?me
+   REAL(KIND=8) :: C_LIGHT = 2.99792458d8                ! https://physics.nist.gov/cgi-bin/cuu/Value?c
 
    REAL(KIND=8) :: EPS_SCALING = 1.d0
       
@@ -48,6 +49,7 @@ MODULE global
    INTEGER :: NP_DUMP_PROC = 0
    INTEGER :: NP_INJECT_PROC = 0
    INTEGER :: DUMP_TRAJECTORY_START = -1
+   INTEGER :: DUMP_TRAJECTORY_EVERY = -1
    INTEGER :: DUMP_TRAJECTORY_NUMBER = 0
    CHARACTER*256 :: TRAJDUMP_SAVE_PATH
    CHARACTER*256 :: PARTDUMP_SAVE_PATH
@@ -204,7 +206,7 @@ MODULE global
    INTEGER         :: N_GRID_BC = 0
 
    ENUM, BIND(C)
-      ENUMERATOR VACUUM, SPECULAR, DIFFUSE, CLL, REACT, AXIS, PERIODIC_MASTER, PERIODIC_SLAVE, EMIT, WB_BC
+      ENUMERATOR VACUUM, SPECULAR, DIFFUSE, CLL, ENERGY_CLL, REACT, AXIS, PERIODIC_MASTER, PERIODIC_SLAVE, EMIT, WB_BC
    END ENUM
 
    ENUM, BIND(C)
@@ -227,6 +229,7 @@ MODULE global
       REAL(KIND=8) :: WALL_EFIELD
       REAL(KIND=8) :: ACC_N
       REAL(KIND=8) :: ACC_T
+      REAL(KIND=8) :: ENERGY_THRESHOLD_EV = -1.d0
 
       REAL(KIND=8) :: EPS_REL
 
@@ -256,6 +259,8 @@ MODULE global
       REAL(KIND=8) :: INITIAL_VOLTAGE           ! Initial voltage for CV mode [V]
       REAL(KIND=8) :: PID_KP, PID_KI, PID_KD    ! PID coefficients
       INTEGER :: SLIDING_WINDOW_SIZE = 10        ! Number of timesteps for averaging
+      REAL(KIND=8) :: PID_I_ACTIVATE_RATIO = 0.8d0 ! Below this |I|/|I_target| use P-only control
+      REAL(KIND=8) :: PID_I_FULL_RATIO = 1.0d0     ! Above this ratio full integral action is enabled
       
       ! State machine
       LOGICAL :: CC_MODE_ACTIVE = .FALSE.        ! FALSE = CV mode, TRUE = CC mode
@@ -265,6 +270,8 @@ MODULE global
       REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: CURRENT_WINDOW_ELEC
       REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: CURRENT_WINDOW_SEE
       INTEGER :: WINDOW_INDEX = 0
+      INTEGER :: WINDOW_SAMPLE_COUNT = 0
+      INTEGER :: STEPS_SINCE_PID_UPDATE = 0
       
       ! Current statistics (per timestep, per boundary)
       REAL(KIND=8) :: TIMESTEP_CHARGE_ION = 0.d0   ! Ion charge accumulated this timestep [C]
@@ -521,6 +528,8 @@ MODULE global
    END TYPE ENERGY_REMOVAL_RULE
 
    TYPE(ENERGY_REMOVAL_RULE), DIMENSION(:), ALLOCATABLE :: ENERGY_REMOVAL_RULES
+   LOGICAL, DIMENSION(:), ALLOCATABLE :: ENERGY_REMOVAL_ACTIVE
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: ENERGY_REMOVAL_THRESHOLD_V2
 
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -675,6 +684,8 @@ MODULE global
       INTEGER :: P1_SP_ID
       INTEGER :: P2_SP_ID
       REAL(KIND=8) :: PROB
+      REAL(KIND=8) :: E_MIN_EV = 0.d0
+      REAL(KIND=8) :: E_MAX_EV = HUGE(1.d0)
       INTEGER :: N_PROD
    END TYPE WALL_REACTIONS_DATA_STRUCTURE
 
@@ -699,29 +710,36 @@ MODULE global
    ! SEE material properties structure
    TYPE SEE_MATERIAL_PROPERTIES
       CHARACTER*64 :: NAME              ! Material name
-      ! Electron SEE parameters (Vaughan model)
+      ! Electron SEE parameters (segmented Vaughan-like model)
       REAL(KIND=8) :: DELTA_MAX         ! Maximum electron SEE yield
       REAL(KIND=8) :: E_MAX             ! Energy at maximum electron yield [eV]
       REAL(KIND=8) :: E_TH              ! Electron threshold energy [eV]
       REAL(KIND=8) :: S_PARAMETER       ! Shape parameter (typically ~1.35)
-      ! Ion SEE parameters (Hagstrum model)
-      REAL(KIND=8) :: GAMMA_MAX         ! Maximum ion SEE yield
-      REAL(KIND=8) :: ION_E_THRESHOLD   ! Ion threshold energy [eV]
-      REAL(KIND=8) :: ION_ALPHA         ! Ion energy exponent
-      REAL(KIND=8) :: ION_BETA          ! Ion decay parameter
-      REAL(KIND=8) :: ION_CHARGE_FACTOR ! Ion charge state correction
-      ! Neutral atom SEE parameters (pure kinetic emission)
-      REAL(KIND=8) :: NEUTRAL_GAMMA_MAX       ! Maximum neutral SEE yield
-      REAL(KIND=8) :: NEUTRAL_E_THRESHOLD     ! Neutral threshold energy [eV]
-      REAL(KIND=8) :: NEUTRAL_ALPHA           ! Neutral energy exponent
-      REAL(KIND=8) :: NEUTRAL_BETA            ! Neutral decay parameter
+      ! Ion SEE parameters (piecewise potential-emission + kinetic-emission model)
+      REAL(KIND=8) :: GAMMA_MAX         ! Peak ion kinetic SEE yield
+      REAL(KIND=8) :: ION_E_THRESHOLD   ! Ion kinetic-branch peak energy [eV]
+      REAL(KIND=8) :: ION_ALPHA         ! Shared log-normal width for ion branches
+      REAL(KIND=8) :: ION_BETA          ! Characteristic potential-emission peak energy [eV]
+      REAL(KIND=8) :: ION_CHARGE_FACTOR ! Ion charge-state scaling for potential emission
+      ! Neutral atom SEE parameters (kinetic branch only; same family as ion high-energy branch)
+      REAL(KIND=8) :: NEUTRAL_GAMMA_MAX       ! Peak neutral kinetic SEE yield
+      REAL(KIND=8) :: NEUTRAL_E_THRESHOLD     ! Neutral kinetic-branch peak energy [eV]
+      REAL(KIND=8) :: NEUTRAL_ALPHA           ! Neutral kinetic-branch log-normal width
+      REAL(KIND=8) :: NEUTRAL_BETA            ! Neutral kinetic soft-onset energy [eV]
+      ! Material-specific angular enhancement parameters
+      REAL(KIND=8) :: ION_KIN_ANGLE_EXP       ! Ion kinetic angular exponent
+      REAL(KIND=8) :: ION_KIN_ANGLE_MAX       ! Ion kinetic maximum angle factor
+      REAL(KIND=8) :: ION_POT_ANGLE_EXP       ! Ion potential angular exponent
+      REAL(KIND=8) :: ION_POT_ANGLE_MAX       ! Ion potential maximum angle factor
+      REAL(KIND=8) :: NEUTRAL_ANGLE_EXP       ! Neutral kinetic angular exponent
+      REAL(KIND=8) :: NEUTRAL_ANGLE_MAX       ! Neutral kinetic maximum angle factor
       ! Common parameters
       REAL(KIND=8) :: W_WORK_FUNCTION   ! Work function [eV]
-      REAL(KIND=8) :: P1                ! Backscatter parameter 1
-      REAL(KIND=8) :: P2                ! Backscatter parameter 2
-      REAL(KIND=8) :: E1                ! Backscatter energy parameter 1 [eV]
-      REAL(KIND=8) :: E2                ! Backscatter energy parameter 2 [eV]
-      REAL(KIND=8) :: SIGMA             ! Surface roughness parameter
+      REAL(KIND=8) :: P1                ! Electron angular exponent
+      REAL(KIND=8) :: P2                ! Electron maximum angle factor
+      REAL(KIND=8) :: E1                ! Electron low-energy transition energy [eV]
+      REAL(KIND=8) :: E2                ! Electron angle-activation energy [eV]
+      REAL(KIND=8) :: SIGMA             ! Electron low-energy branch shape parameter
    END TYPE SEE_MATERIAL_PROPERTIES
 
    TYPE(SEE_MATERIAL_PROPERTIES), DIMENSION(:), ALLOCATABLE :: SEE_MATERIALS
@@ -751,6 +769,8 @@ MODULE global
    REAL(KIND=8) :: SEE_TOTAL_NEUTRAL_YIELD = 0.d0  ! Average neutral yield
    INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: SEE_MATERIAL_IMPACTS    ! Per-material impacts
    INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: SEE_MATERIAL_EMISSIONS  ! Per-material emissions
+   INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: SEE_SPECIES_IMPACTS     ! Per-incident-species impacts
+   INTEGER(KIND=8), DIMENSION(:), ALLOCATABLE :: SEE_SPECIES_EMISSIONS   ! Emissions caused by each incident species
 
    CHARACTER*256 :: SEE_MATERIALS_FILENAME = ''    ! SEE materials definition file
    CHARACTER*256 :: SEE_STATS_SAVE_PATH = ''       ! SEE statistics output path
@@ -811,6 +831,12 @@ MODULE global
 
    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TIMESTEP_EIN
    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TIMESTEP_EOUT
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TIMESTEP_WALL_IMPACT_FLUX
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TIMESTEP_WALL_EIN_REL
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TIMESTEP_WALL_EOUT_REL
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TIMESTEP_WALL_EDEP_REL
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TIMESTEP_WALL_EBIN_FLUX
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TIMESTEP_WALL_EBIN_EFLUX
 
    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TIMESTEP_PHI_BOUND
    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TIMESTEP_QRHO_BOUND
@@ -833,11 +859,20 @@ MODULE global
 
    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_EIN
    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_EOUT
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_WALL_IMPACT_FLUX
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_WALL_EIN_REL
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_WALL_EOUT_REL
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_WALL_EDEP_REL
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_WALL_EBIN_FLUX
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_WALL_EBIN_EFLUX
 
    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_PHI_BOUND
    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_QRHO_BOUND
 
    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_PFLUID_BOUND
+   INTEGER :: WALL_ENERGY_N_BINS = 48
+   REAL(KIND=8) :: WALL_ENERGY_MIN_EV = 1.d-2
+   REAL(KIND=8) :: WALL_ENERGY_MAX_EV = 1.d6
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    !!!!!!!!! Timers !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -855,6 +890,51 @@ MODULE global
 
 
 CONTAINS  ! @@@@@@@@@@@@@@@@@@@@@ SUBROUTINES @@@@@@@@@@@@@@@@@@@@@@@@
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! FUNCTION RELATIVISTIC_GAMMA_FROM_V2 -> gamma from speed squared     !
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   FUNCTION RELATIVISTIC_GAMMA_FROM_V2(V2) RESULT(GAMMA)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: V2
+      REAL(KIND=8) :: GAMMA
+      REAL(KIND=8) :: BETA2
+
+      IF (V2 <= 0.d0) THEN
+         GAMMA = 1.d0
+         RETURN
+      END IF
+
+      BETA2 = MIN(MAX(V2 / (C_LIGHT*C_LIGHT), 0.d0), 1.d0 - 1.d-14)
+      GAMMA = 1.d0 / SQRT(1.d0 - BETA2)
+
+   END FUNCTION RELATIVISTIC_GAMMA_FROM_V2
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! FUNCTION RELATIVISTIC_KINETIC_ENERGY -> kinetic energy [J]          !
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   FUNCTION RELATIVISTIC_KINETIC_ENERGY(MASS, VX, VY, VZ) RESULT(KE_JOULES)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: MASS, VX, VY, VZ
+      REAL(KIND=8) :: KE_JOULES
+      REAL(KIND=8) :: V2, GAMMA
+
+      IF (MASS <= 0.d0) THEN
+         KE_JOULES = 0.d0
+         RETURN
+      END IF
+
+      V2 = VX*VX + VY*VY + VZ*VZ
+      GAMMA = RELATIVISTIC_GAMMA_FROM_V2(V2)
+      KE_JOULES = (GAMMA - 1.d0) * MASS * C_LIGHT * C_LIGHT
+
+   END FUNCTION RELATIVISTIC_KINETIC_ENERGY
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! SUBROUTINE NEWTYPE -> defines a new type needed by MPI             !
