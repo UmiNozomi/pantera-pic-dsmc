@@ -656,6 +656,7 @@ MODULE global
       INTEGER :: P3_SP_ID
       INTEGER :: P4_SP_ID
       REAL(KIND=8) :: A, N, EA
+      REAL(KIND=8) :: Q_VALUE = 0.d0  ! Exothermic energy release [J]
       REAL(KIND=8) :: C1, C2, C3
       INTEGER :: N_PROD
       LOGICAL :: IS_CEX
@@ -663,6 +664,7 @@ MODULE global
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TABLE_CS
       REAL(KIND=8) :: MAX_SIGMA
       INTEGER :: COUNTS
+      INTEGER(KIND=8) :: COUNTS_CUM = 0_8  ! Local cumulative count since simulation start
       ! Spectral diagnostics fields
       LOGICAL :: PRODUCES_HALPHA = .FALSE.
       INTEGER :: EMITTING_PRODUCT_ID = 0

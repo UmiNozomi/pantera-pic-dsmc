@@ -172,7 +172,7 @@ MODULE collisions
       INTEGER      :: NCOLL,NCOLLMAX_INT
       REAL(KIND=8) :: SIGMA, COLLSIGMA, ALPHA, NCOLLMAX,FCORR,VR,VR2,rfp,SIGMA_R
       REAL(KIND=8) :: OMEGA, CREF, MRED, COLLPROB, PTCE
-      REAL(KIND=8) :: TRDOF, PROT1, PROT2, PVIB1, PVIB2, EI, ETR, ECOLL, TOTDOF, EA, EROT, EVIB
+      REAL(KIND=8) :: TRDOF, PROT1, PROT2, PVIB1, PVIB2, EI, ETR, E_LOOKUP, ECOLL, TOTDOF, EA, EA_CM, EROT, EVIB
       !REAL(KIND=8) :: B,C,EINT,ETOT,ETR,PHI,SITETA,VRX,VRY,VRZ
       REAL(KIND=8) :: VXMAX,VXMIN,VYMAX,VYMIN,VZMAX,VZMIN,VRMAX
       REAL(KIND=8) :: PI2
@@ -353,7 +353,15 @@ MODULE collisions
                   IF (ECOLL .LE. EA) CYCLE
                   PTCE = REACTIONS(JR)%C1 * (ECOLL-EA)**REACTIONS(JR)%C2 * (1.-EA/ECOLL)**REACTIONS(JR)%C3
                ELSE IF (REACTIONS(JR)%TYPE == LXCAT) THEN
-                  SIGMA_R = INTERP_CS(ETR, REACTIONS(JR)%TABLE_ENERGY, REACTIONS(JR)%TABLE_CS)
+                  IF (REACTIONS(JR)%R1_SP_ID == SP_ID1) THEN
+                     E_LOOKUP = ETR*(M1+M2)/M2
+                     EA_CM = EA*M2/(M1+M2)
+                  ELSE
+                     E_LOOKUP = ETR*(M1+M2)/M1
+                     EA_CM = EA*M1/(M1+M2)
+                  END IF
+                  IF (E_LOOKUP .LE. EA) CYCLE
+                  SIGMA_R = INTERP_CS(E_LOOKUP, REACTIONS(JR)%TABLE_ENERGY, REACTIONS(JR)%TABLE_CS)
                   PTCE = SIGMA_R / (SIGMA*(VR/CREF)**(1.-2.*OMEGA))
                ELSE
                   PTCE = 0
@@ -364,7 +372,11 @@ MODULE collisions
                   SKIP = .TRUE.
                   TIMESTEP_REAC = TIMESTEP_REAC + 1
                   ! React
-                  ECOLL = ECOLL - EA
+                  IF (REACTIONS(JR)%TYPE == LXCAT) THEN
+                     ECOLL = MAX(0.d0, ECOLL - EA_CM + REACTIONS(JR)%Q_VALUE)
+                  ELSE
+                     ECOLL = ECOLL - EA
+                  END IF
 
                   ! Use R1 as P1 and assign internal energy to it.
                   ! Use R2 as P2 (or P2+P3) (Set R2 as the molecule that dissociates in P2+P3)
@@ -585,7 +597,7 @@ MODULE collisions
       INTEGER      :: NCOLL,NCOLLMAX_INT
       REAL(KIND=8) :: NCOLLMAX,FCORR,VR,VR2,SIGMA_R,MAX_SIGMA
       REAL(KIND=8) :: MRED
-      REAL(KIND=8) :: EI, ETR, ECOLL, TOTDOF, EA, EROT, EVIB
+      REAL(KIND=8) :: EI, ETR, E_LOOKUP, ECOLL, TOTDOF, EA, EA_CM, EROT, EVIB
       !REAL(KIND=8) :: B,C,EINT,ETOT,ETR,PHI,SITETA,VRX,VRY,VRZ
       REAL(KIND=8) :: VXMAX,VXMIN,VYMAX,VYMIN,VZMAX,VZMIN,VRMAX
       REAL(KIND=8) :: PI2
@@ -761,10 +773,12 @@ MODULE collisions
             C2(3) = particles(JP2)%VZ
 
             EA = REACTIONS(JR)%EA
-            IF (ETR .LE. EA) CYCLE
+            E_LOOKUP = ETR*(M1+M2)/M2
+            EA_CM = EA*M2/(M1+M2)
+            IF (E_LOOKUP .LE. EA) CYCLE
 
             IF (REACTIONS(JR)%TYPE == LXCAT) THEN
-               SIGMA_R = INTERP_CS(ETR, REACTIONS(JR)%TABLE_ENERGY, REACTIONS(JR)%TABLE_CS)
+               SIGMA_R = INTERP_CS(E_LOOKUP, REACTIONS(JR)%TABLE_ENERGY, REACTIONS(JR)%TABLE_CS)
                P_REACT = FCORR/(MAX_SIGMA*VRMAX)*VR*SIGMA_R
             ELSE
                CYCLE
@@ -777,6 +791,7 @@ MODULE collisions
 
                TIMESTEP_COLL = TIMESTEP_COLL + 1
                REACTIONS(JR)%COUNTS = REACTIONS(JR)%COUNTS + 1
+               REACTIONS(JR)%COUNTS_CUM = REACTIONS(JR)%COUNTS_CUM + 1_8
                HAS_REACTED(IND1) = .TRUE.
                HAS_REACTED(IND2) = .TRUE.
 
@@ -789,7 +804,7 @@ MODULE collisions
 
                !WRITE(*,*) 'Reacting!'
                ! React
-               ECOLL = ETR - EA
+               ECOLL = MAX(0.d0, ETR - EA_CM + REACTIONS(JR)%Q_VALUE)
 
                ! Use R1 as P1 and assign internal energy to it.
                ! Use R2 as P2 (or P2+P3) (Set R2 as the molecule that dissociates in P2+P3)
@@ -1293,7 +1308,7 @@ MODULE collisions
       REAL(KIND=8) :: GX, GY, GZ, G
       REAL(KIND=8) :: COSCHI, SINCHI, THETA, COSTHETA, SINTHETA
       REAL(KIND=8) :: VR2, VR, MRED, M1, M2, COSA, SINA, BB
-      REAL(KIND=8) :: TRDOF, PROT1, PROT2, PVIB1, PVIB2, EI, ETR, ECOLL, TOTDOF, EA, EROT, EVIB
+      REAL(KIND=8) :: TRDOF, PROT1, PROT2, PVIB1, PVIB2, EI, ETR, E_LOOKUP, ECOLL, TOTDOF, EA, EA_CM, EROT, EVIB
       LOGICAL :: SKIP
       TYPE(PARTICLE_DATA_STRUCTURE) :: NEWparticle
 
@@ -1393,13 +1408,20 @@ MODULE collisions
                   END IF
       
                   EA = REACTIONS(JR)%EA
-                  IF (ECOLL .LE. EA) CYCLE
 
                   IF (REACTIONS(JR)%TYPE == TCE) THEN
                      IF (ECOLL .LE. EA) CYCLE
                      PTCE = REACTIONS(JR)%C1 * (ECOLL-EA)**REACTIONS(JR)%C2 * (1.-EA/ECOLL)**REACTIONS(JR)%C3
                   ELSE IF (REACTIONS(JR)%TYPE == LXCAT) THEN
-                     SIGMA_R = INTERP_CS(ETR, REACTIONS(JR)%TABLE_ENERGY, REACTIONS(JR)%TABLE_CS)
+                     IF (REACTIONS(JR)%R1_SP_ID == SP_ID1) THEN
+                        E_LOOKUP = ETR*(M1+M2)/M2
+                        EA_CM = EA*M2/(M1+M2)
+                     ELSE
+                        E_LOOKUP = ETR*(M1+M2)/M1
+                        EA_CM = EA*M1/(M1+M2)
+                     END IF
+                     IF (E_LOOKUP .LE. EA) CYCLE
+                     SIGMA_R = INTERP_CS(E_LOOKUP, REACTIONS(JR)%TABLE_ENERGY, REACTIONS(JR)%TABLE_CS)
                      PTCE = SIGMA_R / (SIGMA*(VR/CREF)**(1.-2.*OMEGA))
                   ELSE
                      PTCE = 0
@@ -1411,7 +1433,11 @@ MODULE collisions
                      TIMESTEP_REAC = TIMESTEP_REAC + 1
                      !WRITE(*,*) 'Reacting!'
                      ! React
-                     ECOLL = ECOLL - EA
+                     IF (REACTIONS(JR)%TYPE == LXCAT) THEN
+                        ECOLL = MAX(0.d0, ECOLL - EA_CM + REACTIONS(JR)%Q_VALUE)
+                     ELSE
+                        ECOLL = ECOLL - EA
+                     END IF
 
                      ! Use R1 as P1 and assign internal energy to it.
                      ! Use R2 as P2 (or P2+P3) (Set R2 as the molecule that dissociates in P2+P3)
@@ -1744,6 +1770,7 @@ MODULE collisions
                ! Try the reaction
                IF (R_SELECT < P_CUMULATED) THEN ! Collision happens
                   REACTIONS(JR)%COUNTS = REACTIONS(JR)%COUNTS + 1
+               REACTIONS(JR)%COUNTS_CUM = REACTIONS(JR)%COUNTS_CUM + 1_8
 
                   ! ========== Hα PASSIVE DIAGNOSTIC HOOK (Phase 2) ==========
                   ! Record projectile pre-collision state for Ha(total) channels
@@ -1775,7 +1802,7 @@ MODULE collisions
 
                   !WRITE(*,*) 'Reacting!'
                   ! React
-                  ECOLL = MAX(0.d0, ETR - EA_CM)
+                  ECOLL = MAX(0.d0, ETR - EA_CM + REACTIONS(JR)%Q_VALUE)
 
                   ! Use R1 as P1 and assign internal energy to it.
                   ! Use R2 as P2 (or P2+P3) (Set R2 as the molecule that dissociates in P2+P3)

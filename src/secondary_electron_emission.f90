@@ -121,7 +121,7 @@ MODULE secondary_electron_emission
       ! Find all neutral atom species
       N_SEE_NEUTRAL_SPECIES = 0
       DO IM = 1, N_SPECIES
-         IF (ABS(SPECIES(IM)%CHARGE) < 1.d-6) THEN  ! Neutral atom (charge = 0)
+         IF (ABS(SPECIES(IM)%CHARGE) < 1.d-6 .AND. TRIM(SPECIES(IM)%NAME) /= 'n') THEN  ! Neutral atom (charge = 0)
             N_SEE_NEUTRAL_SPECIES = N_SEE_NEUTRAL_SPECIES + 1
          END IF
       END DO
@@ -130,7 +130,7 @@ MODULE secondary_electron_emission
          ALLOCATE(SEE_NEUTRAL_SPECIES_IDS(N_SEE_NEUTRAL_SPECIES))
          N_SEE_NEUTRAL_SPECIES = 0  ! Reset counter for actual assignment
          DO IM = 1, N_SPECIES
-            IF (ABS(SPECIES(IM)%CHARGE) < 1.d-6) THEN
+            IF (ABS(SPECIES(IM)%CHARGE) < 1.d-6 .AND. TRIM(SPECIES(IM)%NAME) /= 'n') THEN
                N_SEE_NEUTRAL_SPECIES = N_SEE_NEUTRAL_SPECIES + 1
                SEE_NEUTRAL_SPECIES_IDS(N_SEE_NEUTRAL_SPECIES) = IM
             END IF

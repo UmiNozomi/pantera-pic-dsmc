@@ -1,9 +1,10 @@
 import pandas as pd
 from pathlib import Path
 import matplotlib.pyplot as plt
+from matplotlib import colors as mcolors
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
-from tkinter import Tk, Label, Entry, Button, Frame, StringVar, ttk, LabelFrame, Toplevel, Checkbutton, BooleanVar, messagebox, filedialog
+from tkinter import Tk, Label, Entry, Button, Frame, StringVar, ttk, LabelFrame, Toplevel, Checkbutton, BooleanVar, messagebox, filedialog, colorchooser
 import tkinter as tk
 from scipy import interpolate
 from scipy.ndimage import gaussian_filter1d
@@ -11,41 +12,122 @@ from scipy.ndimage import gaussian_filter1d
 # ── 配置区 ──
 # 将 root_dir 设为脚本所在目录
 root_dir = Path(__file__).parent   # 或者直接 Path('.')
-file_stem = 'conservation_checks'   # 无后缀的文件"干名"
+file_stem = 'conservation_checks'   # 默认自动扫描的文件名（不含后缀）
 
-# 自动读取所有变量
-def get_all_variables():
-    """自动从CSV文件中读取所有变量名（除了time列）"""
-    files = [f for f in root_dir.rglob('*') if f.is_file() and f.stem == file_stem]
-    if not files:
-        print("⚠️ 未找到任何匹配的文件")
-        return []
-    
-    # 读取第一个文件来获取列名
-    first_file = files[0]
-    try:
-        df = pd.read_csv(first_file, sep='\s+', header=0)
-        # 排除time列，获取所有其他列名
-        variables = [col for col in df.columns if col.lower() != 'time']
-        print(f"📊 发现变量: {variables}")
-        return variables
-    except Exception as e:
-        print(f"❌ 读取文件失败: {e}")
-        return ['nreact_1', 'nreact_2', 'nreact_3']  # 默认值
+# Okabe-Ito 风格的色盲友好配色，适合多组科学数据对比。
+COLORBLIND_PALETTE = [
+    '#0072B2', '#E69F00', '#009E73', '#D55E00',
+    '#CC79A7', '#56B4E9', '#222222', '#666666'
+]
 
-variables = get_all_variables()
+
+def safe_color(value, fallback):
+    """返回 Matplotlib 可识别的颜色；无效输入回退到默认颜色。"""
+    return value if mcolors.is_color_like(value) else fallback
+
+
+def discover_default_files():
+    """查找脚本目录下默认的 conservation_checks 数据文件。"""
+    return sorted(
+        (f for f in root_dir.rglob('*') if f.is_file() and f.stem == file_stem),
+        key=lambda path: str(path).lower()
+    )
+
+
+def _make_dataset_label(path, used_labels):
+    """生成简短且唯一的数据源名称，供图例和控制面板使用。"""
+    base_label = path.parent.name if path.stem == file_stem else path.stem
+    base_label = base_label or path.name
+    label = base_label
+    suffix = 2
+    while label in used_labels:
+        label = f"{base_label} ({suffix})"
+        suffix += 1
+    used_labels.add(label)
+    return label
+
+
+def read_data_files(file_paths):
+    """读取多个空白分隔数据文件，并返回数据源列表及错误信息。"""
+    loaded_data = []
+    errors = []
+    used_labels = set()
+
+    for raw_path in file_paths:
+        path = Path(raw_path).expanduser()
+        try:
+            df = pd.read_csv(path, sep=r'\s+', header=0)
+            df.columns = [str(column).strip() for column in df.columns]
+
+            time_column = next(
+                (column for column in df.columns if column.lower() == 'time'),
+                None
+            )
+            if time_column is None:
+                raise ValueError("缺少 time 列")
+            if time_column != 'time':
+                df = df.rename(columns={time_column: 'time'})
+
+            label = _make_dataset_label(path, used_labels)
+            loaded_data.append((label, df))
+        except Exception as exc:
+            errors.append(f"{path}: {exc}")
+
+    return loaded_data, errors
+
+
+def get_all_variables(data_sources=None):
+    """获取所有已加载文件中变量名的并集（不包含 time 列）。"""
+    if data_sources is None:
+        data_sources = globals().get('data_list', [])
+
+    discovered = []
+    seen = set()
+    for _, df in data_sources:
+        for column in df.columns:
+            if column.lower() != 'time' and column not in seen:
+                seen.add(column)
+                discovered.append(column)
+
+    print(f"📊 发现变量: {discovered}")
+    return discovered
+
+
+def set_data_files(file_paths):
+    """替换当前数据文件集合；至少成功读取一个文件时才更新全局数据。"""
+    global files, data_list, variables
+
+    unique_files = []
+    seen_paths = set()
+    for raw_path in file_paths:
+        path = Path(raw_path).expanduser().resolve()
+        if path not in seen_paths:
+            seen_paths.add(path)
+            unique_files.append(path)
+
+    loaded_data, errors = read_data_files(unique_files)
+    if loaded_data:
+        files = unique_files
+        data_list = loaded_data
+        variables = get_all_variables(data_list)
+
+    return errors, bool(loaded_data)
+
+
+# 初始状态仍保持原有行为：自动读取脚本目录下的匹配文件。
+files = discover_default_files()
+data_list, initial_load_errors = read_data_files(files)
+variables = get_all_variables(data_list)
+for initial_error in initial_load_errors:
+    print(f"❌ {initial_error}")
 # ─────────────────
-
-files = [f for f in root_dir.rglob('*') if f.is_file() and f.stem == file_stem]
-data_list = [(f.parent.name, pd.read_csv(f, sep='\s+', header=0))
-             for f in files]
 
 # 变量选择界面
 class VariableSelector:
     def __init__(self):
         self.root = Tk()
         self.root.title("📊 变量选择器")
-        self.root.geometry("400x600")
+        self.root.geometry("560x760")
         self.root.resizable(True, True)
         
         # 变量选择状态
@@ -60,6 +142,40 @@ class VariableSelector:
         title_label = Label(self.root, text="🎯 选择要绘制的变量", 
                            font=('Arial', 16, 'bold'), pady=10)
         title_label.pack()
+
+        # 数据文件选择区域
+        file_frame = LabelFrame(self.root, text="📂 数据文件（支持多选）", font=('Arial', 11, 'bold'))
+        file_frame.pack(fill='x', padx=10, pady=(0, 8))
+
+        file_button_frame = Frame(file_frame)
+        file_button_frame.pack(fill='x', padx=5, pady=5)
+        ttk.Button(
+            file_button_frame,
+            text="选择多个文件",
+            command=self.choose_data_files
+        ).pack(side='left', padx=3)
+        ttk.Button(
+            file_button_frame,
+            text="恢复自动扫描",
+            command=self.restore_auto_discovery
+        ).pack(side='left', padx=3)
+        ttk.Button(
+            file_button_frame,
+            text="重新读取",
+            command=self.refresh_variables
+        ).pack(side='left', padx=3)
+
+        self.file_summary_label = Label(file_frame, text="", anchor='w')
+        self.file_summary_label.pack(fill='x', padx=8)
+
+        file_list_frame = Frame(file_frame)
+        file_list_frame.pack(fill='x', padx=8, pady=(2, 8))
+        self.file_listbox = tk.Listbox(file_list_frame, height=4, exportselection=False)
+        file_scrollbar = ttk.Scrollbar(file_list_frame, orient='vertical', command=self.file_listbox.yview)
+        self.file_listbox.configure(yscrollcommand=file_scrollbar.set)
+        self.file_listbox.pack(side='left', fill='x', expand=True)
+        file_scrollbar.pack(side='right', fill='y')
+        self.update_file_list()
         
         # 创建中间容器框架，用于放置滚动区域
         middle_frame = Frame(self.root)
@@ -134,6 +250,70 @@ class VariableSelector:
         # 绑定选择变化事件
         self.update_info()
     
+    def choose_data_files(self):
+        """一次选择并加载多个数据文件。"""
+        selected_paths = filedialog.askopenfilenames(
+            parent=self.root,
+            title="选择一个或多个数据文件",
+            initialdir=str(root_dir),
+            filetypes=[
+                ("数据文件", "*.txt *.dat *.csv"),
+                ("所有文件", "*.*")
+            ]
+        )
+        if selected_paths:
+            self.apply_file_selection(selected_paths)
+
+    def restore_auto_discovery(self):
+        """恢复自动扫描脚本目录下的 conservation_checks 文件。"""
+        default_files = discover_default_files()
+        if not default_files:
+            messagebox.showwarning("未找到文件", "没有找到 conservation_checks 数据文件")
+            return
+        self.apply_file_selection(default_files)
+
+    def apply_file_selection(self, selected_paths):
+        """加载文件并刷新变量控件；已打开图表会关闭以避免混用旧数据。"""
+        errors, loaded = set_data_files(selected_paths)
+        if not loaded:
+            messagebox.showerror("读取失败", "所选文件均无法读取：\n\n" + "\n".join(errors[:8]))
+            return
+
+        self.close_all_plots()
+        self.refresh_variable_controls()
+        self.update_file_list()
+
+        if errors:
+            messagebox.showwarning(
+                "部分文件读取失败",
+                f"成功读取 {len(data_list)} 个文件，失败 {len(errors)} 个：\n\n" + "\n".join(errors[:8])
+            )
+        else:
+            messagebox.showinfo(
+                "文件加载完成",
+                f"已加载 {len(data_list)} 个文件，发现 {len(variables)} 个变量"
+            )
+
+    def refresh_variable_controls(self):
+        """使变量复选框与当前数据列保持同步。"""
+        active_variables = set(variables)
+        self.var_states = {
+            var: state for var, state in self.var_states.items()
+            if var in active_variables
+        }
+        self.create_variable_checkboxes()
+        self.update_info()
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def update_file_list(self):
+        """更新当前文件列表显示。"""
+        self.file_listbox.delete(0, tk.END)
+        for path in files:
+            self.file_listbox.insert(tk.END, str(path))
+        self.file_summary_label.config(
+            text=f"当前已加载 {len(data_list)} 个文件 / {len(variables)} 个变量"
+        )
+
     def bind_mousewheel(self):
         """绑定鼠标滚轮事件"""
         def _on_mousewheel(event):
@@ -153,7 +333,7 @@ class VariableSelector:
         # 直接绑定到滚动框架
         self.scrollable_frame.bind('<Enter>', _bind_to_mousewheel)
         self.scrollable_frame.bind('<Leave>', _unbind_from_mousewheel)
-    
+
     def create_variable_checkboxes(self):
         """创建变量复选框"""
         # 清空现有复选框
@@ -191,23 +371,22 @@ class VariableSelector:
     
     def refresh_variables(self):
         """刷新变量列表"""
-        global variables
-        variables = get_all_variables()
-        
-        # 重新加载数据
-        global data_list
-        files = [f for f in root_dir.rglob('*') if f.is_file() and f.stem == file_stem]
-        data_list = [(f.parent.name, pd.read_csv(f, sep='\s+', header=0))
-                     for f in files]
-        
-        # 重新创建复选框
-        self.create_variable_checkboxes()
-        self.update_info()
-        
-        # 更新滚动区域
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        
-        messagebox.showinfo("刷新完成", f"已刷新变量列表，发现 {len(variables)} 个变量")
+        errors, loaded = set_data_files(list(files))
+        if not loaded:
+            messagebox.showerror("刷新失败", "当前文件均无法读取：\n\n" + "\n".join(errors[:8]))
+            return
+
+        self.close_all_plots()
+        self.refresh_variable_controls()
+        self.update_file_list()
+
+        if errors:
+            messagebox.showwarning(
+                "刷新完成（有错误）",
+                f"读取成功 {len(data_list)} 个，失败 {len(errors)} 个"
+            )
+        else:
+            messagebox.showinfo("刷新完成", f"已读取 {len(data_list)} 个文件，发现 {len(variables)} 个变量")
     
     def update_info(self):
         """更新选择信息"""
@@ -349,11 +528,13 @@ class PlotController:
         self.label_position_var = StringVar(value="best")  # 图例位置
         self.x_unit_scale_var = StringVar(value="1")  # X轴单位缩放因子
         self.y_unit_scale_var = StringVar(value="1")  # Y轴单位缩放因子
+        self.axis_color_var = StringVar(value="#222222")
+        self.legend_text_color_var = StringVar(value="#222222")
+        self.legend_edge_color_var = StringVar(value="#666666")
+        self.legend_face_color_var = StringVar(value="#FFFFFF")
         
-        # 预定义颜色列表
-        self.color_list = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
-                          '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
-                          '#a6cee3', '#fb9a99', '#fdbf6f', '#cab2d6', '#ffff99']
+        # 预定义色盲友好颜色列表
+        self.color_list = COLORBLIND_PALETTE
         
         # 绘制数据
         color_index = 0
@@ -429,7 +610,63 @@ class PlotController:
         self.ax.set_axisbelow(True)
         self.ax.spines['top'].set_visible(False)
         self.ax.spines['right'].set_visible(False)
+        self.apply_plot_colors()
         self.fig.tight_layout()
+
+    def choose_color(self, color_var, title):
+        """打开系统颜色选择器并立即应用颜色。"""
+        _, selected = colorchooser.askcolor(
+            color=safe_color(color_var.get(), '#222222'),
+            title=title,
+            parent=self.root
+        )
+        if selected:
+            color_var.set(selected)
+            self.apply_color_settings()
+
+    def apply_plot_colors(self):
+        """应用轴线、刻度、轴标签及图例配色。"""
+        axis_color = safe_color(self.axis_color_var.get(), '#222222')
+        self.ax.tick_params(axis='both', colors=axis_color)
+        self.ax.xaxis.label.set_color(axis_color)
+        self.ax.yaxis.label.set_color(axis_color)
+        for spine in self.ax.spines.values():
+            spine.set_color(axis_color)
+
+        legend = self.ax.get_legend()
+        if legend:
+            text_color = safe_color(self.legend_text_color_var.get(), '#222222')
+            edge_color = safe_color(self.legend_edge_color_var.get(), '#666666')
+            face_color = safe_color(self.legend_face_color_var.get(), '#FFFFFF')
+            for text_item in legend.get_texts():
+                text_item.set_color(text_color)
+            legend.get_frame().set_edgecolor(edge_color)
+            legend.get_frame().set_facecolor(face_color)
+            legend.get_frame().set_alpha(0.9)
+
+    def apply_color_settings(self):
+        """应用颜色设置，并可同步到所有单变量图表。"""
+        colors = (
+            self.axis_color_var.get(),
+            self.legend_text_color_var.get(),
+            self.legend_edge_color_var.get(),
+            self.legend_face_color_var.get()
+        )
+        if self.apply_to_all_var.get():
+            global_controller.apply_to_all(
+                lambda controller: controller._apply_color_settings_single(*colors)
+            )
+        else:
+            self._apply_color_settings_single(*colors)
+
+    def _apply_color_settings_single(self, axis_color, legend_text_color,
+                                     legend_edge_color, legend_face_color):
+        self.axis_color_var.set(safe_color(axis_color, '#222222'))
+        self.legend_text_color_var.set(safe_color(legend_text_color, '#222222'))
+        self.legend_edge_color_var.set(safe_color(legend_edge_color, '#666666'))
+        self.legend_face_color_var.set(safe_color(legend_face_color, '#FFFFFF'))
+        self.apply_plot_colors()
+        self.canvas.draw()
         
     def create_control_panel(self, var):
         """创建控制面板"""
@@ -560,6 +797,31 @@ class PlotController:
             Entry(series_frame, textvariable=self.legend_vars[folder_name]).pack(side='left', fill='x', expand=True)
         
         ttk.Button(legend_frame, text="更新图例", command=self.update_legend).pack(fill='x', padx=5, pady=5)
+
+        # 图例和坐标轴颜色
+        color_frame = LabelFrame(self.scrollable_frame, text="🎨 图例和坐标轴颜色")
+        color_frame.pack(pady=10, fill='x')
+
+        def add_color_row(label_text, color_var, dialog_title):
+            row = Frame(color_frame)
+            row.pack(fill='x', pady=2, padx=5)
+            Label(row, text=label_text, width=14, anchor='w').pack(side='left')
+            Entry(row, textvariable=color_var, width=12).pack(side='left', padx=5)
+            ttk.Button(
+                row,
+                text="选择颜色",
+                command=lambda: self.choose_color(color_var, dialog_title)
+            ).pack(side='left', padx=3)
+
+        add_color_row("坐标轴:", self.axis_color_var, "选择坐标轴颜色")
+        add_color_row("图例文字:", self.legend_text_color_var, "选择图例文字颜色")
+        add_color_row("图例边框:", self.legend_edge_color_var, "选择图例边框颜色")
+        add_color_row("图例背景:", self.legend_face_color_var, "选择图例背景颜色")
+        ttk.Button(
+            color_frame,
+            text="应用颜色",
+            command=self.apply_color_settings
+        ).pack(fill='x', padx=5, pady=5)
         
         # 数据倍率设置
         scale_frame = LabelFrame(self.scrollable_frame, text="⚖️ 数据倍率设置")
@@ -796,6 +1058,7 @@ class PlotController:
                 handles, labels = self.ax.get_legend_handles_labels()
                 if handles:  # 如果有图例元素
                     self.ax.legend(loc=self.label_position_var.get(), prop={'size': size})
+            self.apply_plot_colors()
             self.canvas.draw()
         except ValueError:
             messagebox.showerror("错误", "请输入有效的数字作为图例文字大小")
@@ -907,6 +1170,7 @@ class PlotController:
             handles, labels = self.ax.get_legend_handles_labels()
             if handles:  # 如果有图例元素
                 self.ax.legend(loc=position_value, prop={'size': legend_size})
+        self.apply_plot_colors()
         self.canvas.draw()
 
     def redraw_plot(self):
@@ -1070,7 +1334,8 @@ class PlotController:
                 except ValueError:
                     legend_scale = 1.0
                 self.ax.legend(loc=self.label_position_var.get(), prop={'size': legend_size}, markerscale=legend_scale)
-        
+
+        self.apply_plot_colors()
         self.canvas.draw()
 
     def update_title(self):
@@ -1359,11 +1624,15 @@ class MultiVariablePlotController:
         self.left_y_unit_scale_var = StringVar(value="1")
         self.right_y_unit_scale_var = StringVar(value="1")
         self.legend_marker_scale_var = StringVar(value="1.0")
+        self.axis_color_var = StringVar(value="#222222")
+        self.left_axis_color_var = StringVar(value="#0072B2")
+        self.right_axis_color_var = StringVar(value="#D55E00")
+        self.legend_text_color_var = StringVar(value="#222222")
+        self.legend_edge_color_var = StringVar(value="#666666")
+        self.legend_face_color_var = StringVar(value="#FFFFFF")
         
-        # 预定义颜色列表
-        self.color_list = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
-                          '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
-                          '#a6cee3', '#fb9a99', '#fdbf6f', '#cab2d6', '#ffff99']
+        # 预定义色盲友好颜色列表
+        self.color_list = COLORBLIND_PALETTE
         
         # 初始化变量状态
         self.init_variable_states()
@@ -1420,6 +1689,58 @@ class MultiVariablePlotController:
         
         self.scrollable_frame.bind('<Enter>', _bind_to_mousewheel)
         self.scrollable_frame.bind('<Leave>', _unbind_from_mousewheel)
+
+    def choose_color(self, color_var, title):
+        """打开颜色选择器并重绘多变量图表。"""
+        _, selected = colorchooser.askcolor(
+            color=safe_color(color_var.get(), '#222222'),
+            title=title,
+            parent=self.root
+        )
+        if selected:
+            color_var.set(selected)
+            self.redraw_plot()
+
+    @staticmethod
+    def style_legend(legend, text_color, edge_color, face_color):
+        """设置一个 Matplotlib 图例的文字、边框和背景颜色。"""
+        if legend is None:
+            return
+        for text_item in legend.get_texts():
+            text_item.set_color(text_color)
+        legend.get_frame().set_edgecolor(edge_color)
+        legend.get_frame().set_facecolor(face_color)
+        legend.get_frame().set_alpha(0.9)
+
+    def apply_axis_and_legend_colors(self):
+        """应用单轴或双 Y 轴配色，以及图例配色。"""
+        axis_color = safe_color(self.axis_color_var.get(), '#222222')
+        left_color = safe_color(self.left_axis_color_var.get(), '#0072B2')
+        right_color = safe_color(self.right_axis_color_var.get(), '#D55E00')
+
+        self.ax1.tick_params(axis='x', colors=axis_color)
+        self.ax1.xaxis.label.set_color(axis_color)
+        self.ax1.spines['bottom'].set_color(axis_color)
+
+        if self.dual_y_enabled.get() and self.ax2:
+            self.ax1.tick_params(axis='y', colors=left_color)
+            self.ax1.yaxis.label.set_color(left_color)
+            self.ax1.spines['left'].set_color(left_color)
+
+            self.ax2.tick_params(axis='y', colors=right_color)
+            self.ax2.yaxis.label.set_color(right_color)
+            self.ax2.spines['right'].set_color(right_color)
+        else:
+            self.ax1.tick_params(axis='y', colors=axis_color)
+            self.ax1.yaxis.label.set_color(axis_color)
+            self.ax1.spines['left'].set_color(axis_color)
+
+        legend_text = safe_color(self.legend_text_color_var.get(), '#222222')
+        legend_edge = safe_color(self.legend_edge_color_var.get(), '#666666')
+        legend_face = safe_color(self.legend_face_color_var.get(), '#FFFFFF')
+        self.style_legend(self.ax1.get_legend(), legend_text, legend_edge, legend_face)
+        if self.ax2:
+            self.style_legend(self.ax2.get_legend(), legend_text, legend_edge, legend_face)
 
     def create_control_panel(self):
         """创建控制面板"""
@@ -1599,6 +1920,33 @@ class MultiVariablePlotController:
                                                 'lower center', 'upper center', 'center'], width=12, state='readonly')
         right_legend_combo.pack(side='left', padx=5)
         right_legend_combo.bind('<<ComboboxSelected>>', lambda e: self.redraw_plot())
+
+        # 图例和坐标轴颜色设置
+        color_frame = LabelFrame(self.scrollable_frame, text="🎨 图例和坐标轴颜色")
+        color_frame.pack(pady=10, fill='x')
+
+        def add_color_row(label_text, color_var, dialog_title):
+            row = Frame(color_frame)
+            row.pack(fill='x', pady=2, padx=5)
+            Label(row, text=label_text, width=14, anchor='w').pack(side='left')
+            Entry(row, textvariable=color_var, width=12).pack(side='left', padx=5)
+            ttk.Button(
+                row,
+                text="选择颜色",
+                command=lambda: self.choose_color(color_var, dialog_title)
+            ).pack(side='left', padx=3)
+
+        add_color_row("X轴/单Y轴:", self.axis_color_var, "选择主坐标轴颜色")
+        add_color_row("左Y轴:", self.left_axis_color_var, "选择左Y轴颜色")
+        add_color_row("右Y轴:", self.right_axis_color_var, "选择右Y轴颜色")
+        add_color_row("图例文字:", self.legend_text_color_var, "选择图例文字颜色")
+        add_color_row("图例边框:", self.legend_edge_color_var, "选择图例边框颜色")
+        add_color_row("图例背景:", self.legend_face_color_var, "选择图例背景颜色")
+        ttk.Button(
+            color_frame,
+            text="应用颜色",
+            command=self.redraw_plot
+        ).pack(fill='x', padx=5, pady=5)
         
         # 坐标轴类型控制
         axis_frame = LabelFrame(self.scrollable_frame, text="📐 坐标轴类型")
@@ -2211,6 +2559,8 @@ class MultiVariablePlotController:
             if left_lines:
                 legend1 = self.ax1.legend(left_lines, left_labels, loc=legend_position, 
                                         prop={'size': legend_fontsize, 'family': 'Times New Roman'}, markerscale=legend_scale)
+
+        self.apply_axis_and_legend_colors()
         
         # 应用网格和样式
         self.ax1.grid(True, alpha=0.3)
@@ -2471,6 +2821,14 @@ class MultiVariablePlotController:
                 'tick_fontsize': self.tick_fontsize_var.get(),
                 'legend_fontsize': self.legend_fontsize_var.get(),
                 'legend_marker_scale': self.legend_marker_scale_var.get(),
+
+                # 颜色设置
+                'axis_color': self.axis_color_var.get(),
+                'left_axis_color': self.left_axis_color_var.get(),
+                'right_axis_color': self.right_axis_color_var.get(),
+                'legend_text_color': self.legend_text_color_var.get(),
+                'legend_edge_color': self.legend_edge_color_var.get(),
+                'legend_face_color': self.legend_face_color_var.get(),
                 
                 # 图例位置
                 'legend_position': self.legend_position_var.get(),
@@ -2579,6 +2937,15 @@ class MultiVariablePlotController:
             
             if 'legend_marker_scale' in settings:
                 self.legend_marker_scale_var.set(settings['legend_marker_scale'])
+
+            # 恢复颜色设置
+            color_settings = [
+                'axis_color', 'left_axis_color', 'right_axis_color',
+                'legend_text_color', 'legend_edge_color', 'legend_face_color'
+            ]
+            for color_setting in color_settings:
+                if color_setting in settings:
+                    getattr(self, f'{color_setting}_var').set(settings[color_setting])
             
             # 恢复图例位置
             legend_settings = ['legend_position', 'left_legend_position', 'right_legend_position']
@@ -2659,6 +3026,14 @@ class MultiVariablePlotController:
             self.tick_fontsize_var.set("10")
             self.legend_fontsize_var.set("10")
             self.legend_marker_scale_var.set("1.0")
+
+            # 重置颜色设置
+            self.axis_color_var.set("#222222")
+            self.left_axis_color_var.set("#0072B2")
+            self.right_axis_color_var.set("#D55E00")
+            self.legend_text_color_var.set("#222222")
+            self.legend_edge_color_var.set("#666666")
+            self.legend_face_color_var.set("#FFFFFF")
             
             # 重置图例位置
             self.legend_position_var.set("best")

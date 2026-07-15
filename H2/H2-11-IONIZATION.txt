@@ -31,6 +31,7 @@ COMMENT: Tabata & Shirai (2000) analytic formula
          Energy range: 1.000e-01 - 1.780e+01 eV
          Threshold: 0.000e+00 eV
 UPDATED: 2025-12-23 15:30:27
+COMMENT: Numerical zero tail above 178 eV after sigma falls below 1.7e-29 m2; endpoint extended to 100 keV.
 COLUMNS: Energy (eV) | Cross section (m2)
 --------------------------------------------------
  1.000000e-01	7.967446e-19
@@ -233,5 +234,9 @@ COLUMNS: Energy (eV) | Cross section (m2)
  1.651020e+02	2.859156e-29
  1.714298e+02	2.198191e-29
  1.780000e+02	1.690024e-29
+ 2.000000e+02	0.000000e+00
+ 1.000000e+03	0.000000e+00
+ 1.000000e+04	0.000000e+00
+ 1.000000e+05	0.000000e+00
 --------------------------------------------------
 ====================================================================================================

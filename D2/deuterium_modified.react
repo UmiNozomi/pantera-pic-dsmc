@@ -1,12 +1,14 @@
 ! ===== 电子碰撞反应 (Electron impact reactions) =====
+! ISOTOPE POLICY: electron tables use electron energy without mass scaling; known D2 thresholds are retained.
+! Heavy-particle tables are H/H2 proxies tabulated versus projectile laboratory energy; no hidden sigma multiplier.
 
 ! Reaction 1: 电子-D2 弹性碰撞 (Elastic collision)
 e- + D2 --> e- + D2
 lxcat 0.0 ELASTIC.txt
 
-! Reaction 2: 电子-D2 激发 (Excitation)
+! Reaction 2: 电子-D2 振动激发 (Vibrational excitation)
 e- + D2 --> e- + D2
-lxcat 0.5  EXCITATION3.txt
+lxcat 0.516 EXCITATION2.txt
 
 ! Reaction 3: 电子-D2 电离 (Ionization)
 e- + D2 --> e- + e- + D2+
@@ -17,14 +19,14 @@ e- + D2 --> e- + e- + D+ + D
 lxcat 19.08 dissociativ.txt
 
 ! Reaction 5: 电子-D2 解离激发 (Dissociative excitation)
-e- + D2 --> e- + e- + D + D
+e- + D2 --> e- + D + D
 lxcat 19.08 dissociative_EXCITATION.txt
 
 ! ===== D+ 碰撞反应 (D+ impact reactions) =====
 
 ! Reaction 6: D+-D2 电荷交换 (Charge exchange)
 D+ + D2 -CEX-> D + D2+
-lxcat 2.500000e+00 H2-06-IONIZATION.txt
+lxcat 2.552908e+00 H2-06-IONIZATION.txt
 
 ! Reaction 7: D+-D2 激发 [自动识别产生 Dα]
 D+ + D2 --> D+ + D2
@@ -58,7 +60,7 @@ lxcat 4.000000e+02 H2-16-EXCITATION.txt
 
 ! Reaction 14: D2+-D2 二次电离
 D2+ + D2 --> D2+ + D2+ + e-
-lxcat 31.0   IONIZATION2.txt
+lxcat 30.0   H2-17-IONIZATION.txt
 
 ! ===== D3+ 碰撞反应 (D3+ impact reactions) =====
 
@@ -71,7 +73,7 @@ D3+ + D2 --> D2+ + D + D2
 lxcat 1.550000e+01 H2-19-IONIZATION.txt
 
 ! Reaction 17: D3+-D2 电荷交换
-D3+ + D2 --> D2 + D3+
+D3+ + D2 --> D2 + D + D2+
 lxcat 0.000000e+00 H2-21-IONIZATION.txt
 
 ! Reaction 18: D3+-D2 激发+解离 [自动识别产生 Dα]
@@ -85,12 +87,12 @@ lxcat 0.000000e+00 H2-25-ELASTIC.txt
 ! ===== D 碰撞反应 (D atom impact reactions) =====
 
 ! Reaction 20: D-D2 缔合电离
-D + D2 --> e- + D + D2+
-lxcat 2.100000e+01 H2-30-IONIZATION.txt
+D + D2 --> D + D2+ + e-
+lxcat 2.034433e+01 H2-30-IONIZATION.txt
 
 ! Reaction 21: D-D2 电离
-D + D2 --> e- + D+ + D2
-lxcat 2.000000e+01 H2-31-IONIZATION.txt
+D + D2 --> D+ + D2 + e-
+lxcat 2.003314e+01 H2-31-IONIZATION.txt
 
 ! Reaction 22: D-D2 激发 [自动识别产生 Dα]
 D + D2 --> D + D2
@@ -108,37 +110,51 @@ lxcat 3.200000e+01 H2-38-IONIZATION.txt
 
 ! Reaction 25: D2-D2 解离电离
 D2 + D2 --> e- + D+ + D + D2
-lxcat 2.000000e+01 H2-43-IONIZATION.txt
+lxcat 2.090083e+01 H2-43-IONIZATION.txt
 
 ! Reaction 26: D2-D2 激发 [自动识别产生 Dα]
 D2 + D2 --> D2 + D2
-lxcat 1.100000e+01 H2-44-EXCITATION.txt
+lxcat 1.173625e+01 H2-44-EXCITATION.txt
 
 ! Reaction 27: D2-D2 弹性碰撞
 D2 + D2 --> D2 + D2
 lxcat 0.000000e+00 H2-46-ELASTIC.txt
 
-! ===== D-D 核聚变反应追踪 (D-D Fusion Reaction Tracking) =====
-! 注意：仅追踪反应发生次数，不模拟核聚变产物。
-! 截面数据来源: Bosch & Hale (1992), 包含两个分支的总截面:
-!   D + D -> He-3 (0.82 MeV) + n (2.45 MeV)  (50%)
-!   D + D -> T (1.01 MeV) + p (3.02 MeV)      (50%)
-! 产物保持不变以仅追踪反应统计
+! ===== D-D 核聚变普通反应 (D-D Fusion Product Reactions) =====
+! Bosch & Hale total cross section, split 50/50 into the two product branches.
+! MONTE-CARLO BIAS: summed branch cross section and event probability are multiplied by 1e8.
+! Divide cumulative branch counts and reaction rates by 1e8 for a physical estimate.
+! He3+ is used for charged projectiles; He3 is used for neutral projectiles to conserve charge.
+! The remaining deuteron(s) are retained as a spectator D or D2 product.
 
-! Reaction 28: D+-D2 核聚变 (D+ ion + background D2)
-D+ + D2 --> D+ + D2
-lxcat 2.000000e+03 D_fusion.txt
+! Reaction 28: D+ + D2 -> He3 + n branch
+D+ + D2 --> He3+ + n + D
+lxcat_fusion 2.000000e+03 3.268900e+06 D_fusion_n.txt
 
-! Reaction 29: D-D2 核聚变 (fast D atom + background D2)
-D + D2 --> D + D2
-lxcat 2.000000e+03 D_fusion.txt
+! Reaction 29: D+ + D2 -> T + p branch
+D+ + D2 --> T + p+ + D
+lxcat_fusion 2.000000e+03 4.032700e+06 D_fusion_p.txt
 
-! Reaction 30: D2+-D2 核聚变 (D2+ ion + background D2)
-D2+ + D2 --> D2+ + D2
-lxcat 4.000000e+03 D2_fusion.txt
+! Reaction 30: D + D2 -> He3 + n branch
+D + D2 --> He3 + n + D
+lxcat_fusion 2.000000e+03 3.268900e+06 D_fusion_n.txt
 
-! Reaction 29: D2-D2 核聚变 (fast D2 atom + background D2)
-D2 + D2 --> D2 + D2
-lxcat 4.000000e+03 D2_fusion.txt
+! Reaction 31: D + D2 -> T + H branch (neutralized proton product)
+D + D2 --> T + H + D
+lxcat_fusion 2.000000e+03 4.032700e+06 D_fusion_p.txt
 
+! Reaction 32: D2+ + D2 -> He3 + n branch
+D2+ + D2 --> He3+ + n + D2
+lxcat_fusion 4.000000e+03 3.268900e+06 D2_fusion_n.txt
 
+! Reaction 33: D2+ + D2 -> T + p branch
+D2+ + D2 --> T + p+ + D2
+lxcat_fusion 4.000000e+03 4.032700e+06 D2_fusion_p.txt
+
+! Reaction 34: D2 + D2 -> He3 + n branch
+D2 + D2 --> He3 + n + D2
+lxcat_fusion 4.000000e+03 3.268900e+06 D2_fusion_n.txt
+
+! Reaction 35: D2 + D2 -> T + H branch (neutralized proton product)
+D2 + D2 --> T + H + D2
+lxcat_fusion 4.000000e+03 4.032700e+06 D2_fusion_p.txt

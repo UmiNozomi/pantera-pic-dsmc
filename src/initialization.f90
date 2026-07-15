@@ -1836,10 +1836,16 @@ MODULE initialization
                READ(STRARRAY(3), '(ES14.0)') NEW_REACTION%N
                READ(STRARRAY(4), '(ES14.0)') NEW_REACTION%EA
             END IF
-         ELSE IF (STRARRAY(1) == 'lxcat') THEN
+         ELSE IF (STRARRAY(1) == 'lxcat' .OR. STRARRAY(1) == 'lxcat_fusion') THEN
             NEW_REACTION%TYPE = LXCAT
+            NEW_REACTION%Q_VALUE = 0.d0
             READ(STRARRAY(2), *) NEW_REACTION%EA
-            READ(STRARRAY(3), *) REACTION_FILENAME
+            IF (STRARRAY(1) == 'lxcat_fusion') THEN
+               READ(STRARRAY(3), *) NEW_REACTION%Q_VALUE
+               READ(STRARRAY(4), *) REACTION_FILENAME
+            ELSE
+               READ(STRARRAY(3), *) REACTION_FILENAME
+            END IF
 
 
             OPEN(UNIT=in4,FILE=REACTION_FILENAME, STATUS='old',IOSTAT=ios)
@@ -1891,7 +1897,9 @@ MODULE initialization
          END IF
 
          NEW_REACTION%EA = NEW_REACTION%EA * QE
+         NEW_REACTION%Q_VALUE = NEW_REACTION%Q_VALUE * QE
          NEW_REACTION%COUNTS = 0
+         NEW_REACTION%COUNTS_CUM = 0_8
          
          ! ========== Spectral Diagnostics: Auto-detect excitation reactions ==========
          NEW_REACTION%PRODUCES_HALPHA = .FALSE.

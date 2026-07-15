@@ -440,6 +440,7 @@ DEFAULT_CONFIG = {
     'bg_density': 1.5e20,       # n(D2) background [1/m³]
     'bg_temp_K': 300.0,         # background temperature [K]
     'bg_nucleons_per_mol': 2,   # D2 has 2 deuterons
+    'fusion_bias_factor': 1.0e8,  # Monte-Carlo sampling bias in R28-R31
 }
 
 
@@ -495,12 +496,16 @@ def process_vtk(vtk_file, config, args):
         nrho = np.array(nrho_data, dtype=np.float64)
         T_K  = np.array(T_data, dtype=np.float64)
 
-        # Temperature for reactivity: use the effective CM temperature
-        # T_eff = (m_target * T_beam + m_beam * T_target) / (m_beam + m_target)
+        # Convert molecular translational temperatures to the temperature of
+        # their co-moving deuterons, then form the D-D relative-temperature
+        # parameter used by the Bosch-Hale Maxwellian reactivity.
         m_beam = sp_info['mass_kg']
         m_target = 6.689e-27  # D2 mass
+        m_deuteron = 3.344e-27
         T_bg = config['bg_temp_K']
-        T_eff = (m_target * T_K + m_beam * T_bg) / (m_beam + m_target)
+        T_beam_D = T_K * (m_deuteron / m_beam)
+        T_bg_D = T_bg * (m_deuteron / m_target)
+        T_eff = 0.5 * (T_beam_D + T_bg_D)
 
         # Convert to keV
         T_keV = T_eff * KB / (QE * 1e3)
@@ -547,9 +552,12 @@ def process_vtk(vtk_file, config, args):
             sim_rates[name.strip()] = reader.fields[name][3]
     if sim_rates:
         print(f'\n  Simulation-counted reaction rates found:')
+        bias_factor = config['fusion_bias_factor']
         for name, data in sim_rates.items():
             d = np.array(data, dtype=np.float64)
-            print(f'    {name}: max = {np.max(d):.3e}, mean = {np.mean(d):.3e}')
+            d_physical = d / bias_factor
+            print(f'    {name}: biased max = {np.max(d):.3e}, '
+                  f'physical max = {np.max(d_physical):.3e}')
 
     # Write output VTK
     basename = os.path.splitext(os.path.basename(vtk_file))[0]
@@ -638,7 +646,8 @@ def _make_plots(reader, new_fields, sim_rates, basename, outdir, config):
             if m:
                 rnum = int(m.group(1))
                 if rnum >= 28:  # Fusion reactions start at R28
-                    R_sim_total += np.array(data, dtype=np.float64)
+                    R_sim_total += (np.array(data, dtype=np.float64)
+                                    / config['fusion_bias_factor'])
         mask_sim = R_sim_total > 0
         if np.any(mask_sim):
             vmin = max(R_sim_total[mask_sim].min(), 1e-10)
@@ -648,7 +657,7 @@ def _make_plots(reader, new_fields, sim_rates, basename, outdir, config):
             plt.colorbar(sc, ax=ax, label=r'$R$ [reactions/(m³·s)]')
         ax.set_xlabel('X [cm]')
         ax.set_ylabel('R [cm]')
-        ax.set_title('Simulation: FNUM × count / (V × T)')
+        ax.set_title('Simulation: de-biased FNUM × count / (V × T)')
         ax.set_aspect('equal')
 
         fig.suptitle(f'D-D Fusion Rate Comparison — {basename}', fontsize=14)
@@ -1006,11 +1015,9 @@ Examples:
   python compute_dd_rate.py results/dsmc_flowfield_10000.vtk --list-fields
 
 Note on cross-section scaling:
-  The simulation's dd_fusion.txt cross-sections are SCALED ×1e10.
-  The simulation-counted rates (reaction_rate_R28...) therefore contain this
-  artificial scaling factor. The analytical rates computed by this script use
-  the UNSCALED Bosch-Hale cross-sections, giving the TRUE physical rate.
-  To compare, divide simulation rates by 1e10.
+  The R28...R31 simulation tables intentionally use a 1e8 Monte-Carlo bias to
+  raise fusion-event statistics. Simulation counts/rates must be divided by
+  1e8 for physical comparison; analytical Bosch-Hale rates remain unscaled.
         """)
     parser.add_argument('vtk_files', nargs='+', help='VTK file(s) to process (glob patterns supported)')
     parser.add_argument('--bg-density', type=float, default=1.5e20,

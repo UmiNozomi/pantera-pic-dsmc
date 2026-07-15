@@ -4,6 +4,7 @@ H2
 SPECIES: e / H2
 PROCESS: Vibrational Excitation v=0->1
 PARAM.:  Threshold = 0.516 eV
+COMMENT: Numerical zero tail extended from the zero-valued 10 keV endpoint to 100 keV.
 COLUMNS: Energy (eV) | Cross section (m2)
 -----------------------------
  5.160000e-1	0.000000e+00
@@ -14,4 +15,7 @@ COLUMNS: Energy (eV) | Cross section (m2)
  1.000000e+1	2.500000e-21
  1.000000e+2	1.000000e-23
  1.000000e+4	0.000000e+00
+ 2.000000e+04	0.000000e+00
+ 5.000000e+04	0.000000e+00
+ 1.000000e+05	0.000000e+00
 -----------------------------

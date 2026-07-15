@@ -1613,13 +1613,19 @@ CONTAINS
       INDEX = -1
       IF (VALUE_EN .LT. TABLE_EN(L)) THEN
          ! Lower than lower energy value
-         !VALUE_CS = TABLE_CS(L)
          VALUE_CS = 0
          RETURN
+      ELSE IF (VALUE_EN .EQ. TABLE_EN(L)) THEN
+         ! Exact lower endpoint
+         VALUE_CS = TABLE_CS(L)
+         RETURN
       ELSE IF (VALUE_EN .GT. TABLE_EN(R)) THEN
-         ! Higher than highest energy value
-         !VALUE_CS = TABLE_CS(R)
+         ! Higher than highest energy value: do not extrapolate
          VALUE_CS = 0
+         RETURN
+      ELSE IF (VALUE_EN .EQ. TABLE_EN(R)) THEN
+         ! Exact upper endpoint (avoids a binary-search stall)
+         VALUE_CS = TABLE_CS(R)
          RETURN
       ELSE IF (R == L+1) THEN
          ! Only two values in the table

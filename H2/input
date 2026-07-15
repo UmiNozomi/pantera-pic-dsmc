@@ -36,7 +36,7 @@ PIC_type:
 Jacobian_type:
      3
 Mesh_file_SU2:
-    'iech'
+    'iecq'
 Bool_dump_moments:
     .FALSE.
 Bool_dump_fluxes:
@@ -57,7 +57,7 @@ All_output_path:
 ! ========= Numerical parameters ====================
 
 Fnum:
-  5e4
+  1e4
 Timestep:
     1.0e-11
 Number_of_timesteps:
@@ -174,10 +174,10 @@ SEE_boundary_mapping:
 SEE_boundary_mapping:
     wall -1 10 T
 ! ========= Initial particle seed ===================
-!Boundary_emit:
-    !cathode  Electrons   1.0e15   1.0    1.0    1.0    11600.0    0.0    0.0    0.    0.
+!Volume_inject:
+    !Electrons   1.0e17   1.0    1.0    1.0    300.0    0.0    0.0    0.    0.
 Initial_particles:
-    Electrons      5.0e12   1.0    1.0    1.0    11600.0    0.0    0.0    0.    0.
+    Electrons      5.0e12   1.0    1.0    1.0    300.0    0.0    0.0    0.    0.
 !Initial_particles:
     !Ions   1.0e11   1.0    1.0    1.0    300.0    0.0    0.0    0.    0.
 Remove_particles_by_energy:
@@ -206,7 +206,7 @@ Boundary_condition:
 Boundary_condition:
     cathode    energy_cll 300.00 0.95 0.98 100.0
 Boundary_condition:
-    cathode constant_current 0.01 -30000.0 2e5 0 0 1000 -900000 -5000
+    cathode constant_current 0.01 -50000.0 2e5 0 0 1000 -900000 -5000
 Boundary_condition:
     cathode    react  cathode.wall
     

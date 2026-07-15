@@ -190,7 +190,7 @@ Boundary_condition:
 Boundary_condition:
     anode    dirichlet   0.00
 Boundary_condition:
-    anode    energy_cll 300.00 0.20 0.60 11.0
+    anode    energy_cll 300.00 0.95 0.98 100.0
 Boundary_condition:
     anode     react  anode.wall
 
@@ -198,12 +198,12 @@ Boundary_condition:
 Boundary_condition:
     wall     dielectric
 Boundary_condition:
-    wall    energy_cll 300.00 0.20 0.60 11.0
+    wall    energy_cll 300.00 0.95 0.98 100.0
 Boundary_condition:
     wall     react  wall.wall
 ! ========= 阴极边界条件 - 定电流控制 =============
 Boundary_condition:
-    cathode    energy_cll 300.00 0.20 0.60 11.0
+    cathode    energy_cll 300.00 0.95 0.98 100.0
 Boundary_condition:
     cathode constant_current 0.01 -80000.0 5e7 0 0 1000 -900000 -5000
 Boundary_condition:

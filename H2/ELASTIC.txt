@@ -84,6 +84,7 @@ PARAM.:  m/M = 0.000274348, complete set
 COMMENT: [E + H2(X) -> E + H2(X), Elastic] Phelps A V et al Wingerden B et al 1977 J. Phys. B
 COMMENT: 10 1345 Tawara H et al 1990 J. Phys. Chem. Ref. Data 19 617.
 UPDATED: 2022-05-05 17:44:47
+COMMENT: 20-100 keV extension: log-log fit to the positive 1.5-10 keV tail, sigma proportional to E^-1.628722.
 COLUMNS: Energy (eV) | Cross section (m2)
 -----------------------------
  0.000000e+0	6.400000e-20
@@ -137,5 +138,8 @@ COLUMNS: Energy (eV) | Cross section (m2)
  5.000000e+3	2.410000e-24
  7.000000e+3	1.390000e-24
  1.000000e+4	7.790000e-25
+ 2.000000e+04	2.518228e-25
+ 5.000000e+04	5.661888e-26
+ 1.000000e+05	1.830910e-26
 -----------------------------
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx

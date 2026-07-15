@@ -9,16 +9,15 @@ Aluminum      1.2    500   25   1.35  2.80   300000   1.90 30   1.2   4.3   0.55
 Steel         1.1    550   28   1.35  0.2    180      0.6  50   1.0   4.5   0.52 3.6  75  280  0.32  0.02   120   0.6  50     0.25  3.0  0.30  2.0  0.15  3.0
 Tungsten      1.4    700   35   1.35  0.4    200      0.9  60   1.0   4.5   0.45 3.2  90  350  0.25  0.04   150   0.9  60     0.25  3.0  0.30  2.0  0.15  3.0
 Nickel        1.0    520   26   1.35  0.15   140      0.65 45   1.0   4.8   0.58 3.9  72  260  0.38  0.015  110   0.65 45    0.25  3.0  0.30  2.0  0.15  3.0
-# SUS304: very conservative effective plasma-conditioned stainless steel.
-# Electron SEE is strongly reduced to mimic adsorbates, roughness, and
-# sheath recapture of slow secondaries in the discharge.
-SUS304        1.35   450   40   2.30  0.45   150000   1.60 45   1.0   4.8   0.25 2.10 140 1700 0.32  0.070  150000 1.60  650    0.45  3.2  0.35  2.3  0.20  2.6
+# SUS304: enhanced-feedback sensitivity case for discharge ignition.
+# Peak electron, ion, and fast-neutral yields are raised while the
+# characteristic energies and angular dependencies are left unchanged.
+SUS304        1.80   450   40   2.30  0.80   150000   1.60 45   1.60  4.8   0.25 2.10 140 1700 0.32  0.120  150000 1.60  650    0.45  3.2  0.35  2.3  0.20  2.6
 
 # Glass materials (for walls)
 QuartzGlass   3.8    350   18   1.35  0.1    100      0.5  30   1.0   4.5   0.45 3.2  90  350  0.25  0.01   80    0.5  30     0.25  3.0  0.30  2.0  0.15  3.0
 BoroGlass     3.2    300   15   1.35  0.08   80       0.4  25   1.0   4.2   0.5  3.5  80  300  0.3   0.008  70    0.4  25     0.25  3.0  0.30  2.0  0.15  3.0
 SodaGlass     2.8    250   12   1.35  0.06   70       0.35 20   1.0   4.0   0.55 3.8  70  250  0.35  0.006  60    0.35 20    0.25  3.0  0.30  2.0  0.15  3.0
-# Duran: very conservative effective plasma-conditioned borosilicate wall.
-# The clean-glass peak is suppressed below unity to represent charging,
-# contamination, and near-wall recapture in this IEC discharge model.
-Duran         1.85   500   35   2.25  0.55   80       0.4  25   1.0   4.4   0.28 2.35 140 2100 0.36  0.070  70    0.4  25     0.60  4.5  0.60  3.2  0.35  4.5
+# Duran: enhanced-feedback sensitivity case for dielectric walls.
+# Yield amplitudes are raised without shifting their energy peaks.
+Duran         2.40   500   35   2.25  0.85   80       0.4  25   1.50  4.4   0.28 2.35 140 2100 0.36  0.120  70    0.4  25     0.60  4.5  0.60  3.2  0.35  4.5

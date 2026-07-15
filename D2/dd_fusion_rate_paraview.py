@@ -6,7 +6,8 @@ Usage:
   2. Tools -> Python Shell -> Run Script -> select this file
   3. New pipeline nodes with fusion rate fields will appear
 
-Cross-section includes x1e10 scaling factor!
+Simulation cross-sections include a 1e8 Monte-Carlo sampling bias.
+Physical-rate fields are reported after division by the same bias.
 """
 
 import paraview.simple as pvs
@@ -23,53 +24,54 @@ M_D  = 3.344e-27           # D atom mass [kg]
 M_D2 = 6.689e-27           # D2 molecule mass [kg]
 MU_D_D2 = (M_D * M_D2) / (M_D + M_D2)  # Reduced mass [kg]
 EV_TO_J = 1.602176634e-19
+FUSION_BIAS_FACTOR = 1.0e8
 
-# Cross-section from dd_fusion.txt (with x1e10 scaling)
+# Biased effective cross-section from D_fusion.txt; divide by FUSION_BIAS_FACTOR for physics
 CROSS_SECTION_DATA = np.array([
     [0.000000e+00, 0.00000e+00],
-    [1.000000e+02, 0.00000e+00],
-    [5.000000e+02, 0.00000e+00],
-    [1.000000e+03, 3.24796e-37],
-    [2.000000e+03, 2.00051e-31],
-    [3.000000e+03, 6.65795e-29],
-    [4.000000e+03, 2.02748e-27],
-    [5.000000e+03, 2.03152e-26],
-    [6.000000e+03, 1.09400e-25],
-    [7.000000e+03, 3.99875e-25],
-    [8.000000e+03, 1.12634e-24],
-    [9.000000e+03, 2.63697e-24],
-    [1.000000e+04, 5.38484e-24],
-    [1.100000e+04, 9.90663e-24],
-    [1.200000e+04, 1.67952e-23],
-    [1.300000e+04, 2.66716e-23],
-    [1.400000e+04, 4.01592e-23],
-    [1.500000e+04, 5.78625e-23],
-    [1.600000e+04, 8.03506e-23],
-    [1.700000e+04, 1.08145e-22],
-    [1.800000e+04, 1.41714e-22],
-    [1.900000e+04, 1.81462e-22],
-    [2.000000e+04, 2.27738e-22],
-    [2.500000e+04, 5.65050e-22],
-    [3.000000e+04, 1.08632e-21],
-    [3.500000e+04, 1.78384e-21],
-    [4.000000e+04, 2.63708e-21],
-    [4.500000e+04, 3.62066e-21],
-    [5.000000e+04, 4.70886e-21],
-    [6.000000e+04, 7.10690e-21],
-    [7.000000e+04, 9.67646e-21],
-    [8.000000e+04, 1.23085e-20],
-    [9.000000e+04, 1.49306e-20],
-    [1.000000e+05, 1.74967e-20],
-    [1.200000e+05, 2.23612e-20],
-    [1.500000e+05, 2.88562e-20],
-    [2.000000e+05, 3.76332e-20],
-    [2.500000e+05, 4.43744e-20],
-    [3.000000e+05, 4.96501e-20],
-    [3.500000e+05, 5.38764e-20],
-    [4.000000e+05, 5.73408e-20],
-    [4.500000e+05, 6.02423e-20],
-    [5.000000e+05, 6.27207e-20],
-    [5.240000e+05, 6.37906e-20],
+    [2.000000e+02, 0.00000e+00],
+    [1.000000e+03, 0.00000e+00],
+    [2.000000e+03, 6.49592e-39],
+    [4.000000e+03, 4.00102e-33],
+    [6.000000e+03, 1.33159e-30],
+    [8.000000e+03, 4.05496e-29],
+    [1.000000e+04, 4.06304e-28],
+    [1.200000e+04, 2.18800e-27],
+    [1.400000e+04, 7.99750e-27],
+    [1.600000e+04, 2.25268e-26],
+    [1.800000e+04, 5.27394e-26],
+    [2.000000e+04, 1.07697e-25],
+    [2.200000e+04, 1.98133e-25],
+    [2.400000e+04, 3.35904e-25],
+    [2.600000e+04, 5.33432e-25],
+    [2.800000e+04, 8.03184e-25],
+    [3.000000e+04, 1.15725e-24],
+    [3.200000e+04, 1.60701e-24],
+    [3.400000e+04, 2.16290e-24],
+    [3.600000e+04, 2.83428e-24],
+    [3.800000e+04, 3.62924e-24],
+    [4.000000e+04, 4.55476e-24],
+    [5.000000e+04, 1.13010e-23],
+    [6.000000e+04, 2.17264e-23],
+    [7.000000e+04, 3.56768e-23],
+    [8.000000e+04, 5.27416e-23],
+    [9.000000e+04, 7.24132e-23],
+    [1.000000e+05, 9.41772e-23],
+    [1.200000e+05, 1.42138e-22],
+    [1.400000e+05, 1.93529e-22],
+    [1.600000e+05, 2.46170e-22],
+    [1.800000e+05, 2.98612e-22],
+    [2.000000e+05, 3.49934e-22],
+    [2.400000e+05, 4.47224e-22],
+    [3.000000e+05, 5.77124e-22],
+    [4.000000e+05, 7.52664e-22],
+    [5.000000e+05, 8.87488e-22],
+    [6.000000e+05, 9.93002e-22],
+    [7.000000e+05, 1.07753e-21],
+    [8.000000e+05, 1.14682e-21],
+    [9.000000e+05, 1.20485e-21],
+    [1.000000e+06, 1.25441e-21],
+    [1.048000e+06, 1.27581e-21],
 ])
 
 CS_ENERGY = CROSS_SECTION_DATA[:, 0]
@@ -124,6 +126,7 @@ M_D = %e
 M_D2 = %e
 MU = %e
 EV_TO_J = %e
+FUSION_BIAS_FACTOR = %e
 kB = 1.380649e-23  # Boltzmann constant [J/K]
 kB_eV = 8.617333e-5  # [eV/K]
 
@@ -215,11 +218,13 @@ E_total_D  = E_drift_D + E_thermal_D
 v_eff_Dp = np.sqrt(2.0 * E_total_Dp / M_D)
 v_eff_D  = np.sqrt(2.0 * E_total_D / M_D)
 
-# Convert to CM frame energy [eV]
-# E_cm = (M_D2 / (M_D + M_D2)) * E_lab = 2/3 * E_lab
-mass_ratio = M_D2 / (M_D + M_D2)  # = 2/3
-E_cm_Dp_eV = mass_ratio * E_total_Dp / EV_TO_J
-E_cm_D_eV  = mass_ratio * E_total_D / EV_TO_J
+# D_fusion.txt is tabulated against projectile laboratory energy.
+# For a D projectile and either D nucleus in stationary D2, E_DD,cm = E_lab/2.
+# Its factor of two for the two target deuterons is already included in sigma_eff.
+E_lab_Dp_eV = E_total_Dp / EV_TO_J
+E_lab_D_eV  = E_total_D / EV_TO_J
+E_cm_Dp_eV  = 0.5 * E_lab_Dp_eV
+E_cm_D_eV   = 0.5 * E_lab_D_eV
 
 print("\\n--- Energy Statistics ---")
 print("D+ drift energy:   min=%%e max=%%e eV" %% (E_drift_Dp.min()/EV_TO_J, E_drift_Dp.max()/EV_TO_J))
@@ -230,25 +235,33 @@ print("D  drift energy:   min=%%e max=%%e eV" %% (E_drift_D.min()/EV_TO_J, E_dri
 print("D  thermal energy: min=%%e max=%%e eV" %% (E_thermal_D.min()/EV_TO_J, E_thermal_D.max()/EV_TO_J))
 print("D  CM energy:      min=%%e max=%%e eV" %% (E_cm_D_eV.min(), E_cm_D_eV.max()))
 
-# Cross-section at CM energy
-sigma_Dp = sigma_interp(E_cm_Dp_eV)
-sigma_D  = sigma_interp(E_cm_D_eV)
+# Biased effective D + D2 cross-section at projectile laboratory energy
+sigma_Dp = sigma_interp(E_lab_Dp_eV)
+sigma_D  = sigma_interp(E_lab_D_eV)
+sigma_Dp_physical = sigma_Dp / FUSION_BIAS_FACTOR
+sigma_D_physical  = sigma_D / FUSION_BIAS_FACTOR
 
 print("\\n--- Cross-section ---")
-print("sigma_D+: min=%%e max=%%e m^2" %% (sigma_Dp.min(), sigma_Dp.max()))
-print("sigma_D:  min=%%e max=%%e m^2" %% (sigma_D.min(), sigma_D.max()))
+print("sigma_D+ biased:   min=%%e max=%%e m^2" %% (sigma_Dp.min(), sigma_Dp.max()))
+print("sigma_D biased:    min=%%e max=%%e m^2" %% (sigma_D.min(), sigma_D.max()))
+print("sigma_D+ physical: min=%%e max=%%e m^2" %% (sigma_Dp_physical.min(), sigma_Dp_physical.max()))
+print("sigma_D physical:  min=%%e max=%%e m^2" %% (sigma_D_physical.min(), sigma_D_physical.max()))
 print("Cells with sigma_D+ > 0: %%d / %%d" %% (np.sum(sigma_Dp > 0), n_cells))
 print("Cells with sigma_D  > 0: %%d / %%d" %% (np.sum(sigma_D > 0), n_cells))
 
-# Reaction rate: R = n_projectile * n_D2 * sigma(E_cm) * v_eff
+# Existing field names retain the biased Monte-Carlo/visualization rate.
 R28 = nrho_Dp * N_D2 * sigma_Dp * v_eff_Dp
 R29 = nrho_D  * N_D2 * sigma_D  * v_eff_D
 R_total = R28 + R29
+R28_physical = R28 / FUSION_BIAS_FACTOR
+R29_physical = R29 / FUSION_BIAS_FACTOR
+R_total_physical = R_total / FUSION_BIAS_FACTOR
 
 print("\\n--- Reaction Rates ---")
-print("R28 (D+ + D2): max=%%e reactions/m3/s" %% R28.max())
-print("R29 (D  + D2): max=%%e reactions/m3/s" %% R29.max())
-print("R_total:       max=%%e reactions/m3/s" %% R_total.max())
+print("R28 biased (D+ + D2): max=%%e reactions/m3/s" %% R28.max())
+print("R29 biased (D  + D2): max=%%e reactions/m3/s" %% R29.max())
+print("R_total biased:       max=%%e reactions/m3/s" %% R_total.max())
+print("R_total physical:     max=%%e reactions/m3/s" %% R_total_physical.max())
 print("Cells with R_total > 0: %%d / %%d" %% (np.sum(R_total > 0), n_cells))
 
 # ====== Output arrays ======
@@ -265,6 +278,9 @@ def add_array(name, data):
 add_array("fusion_rate_R28_Dp_D2", R28)
 add_array("fusion_rate_R29_D_D2", R29)
 add_array("fusion_rate_total", R_total)
+add_array("fusion_rate_physical_R28_Dp_D2", R28_physical)
+add_array("fusion_rate_physical_R29_D_D2", R29_physical)
+add_array("fusion_rate_physical_total", R_total_physical)
 add_array("E_cm_Dp_eV", E_cm_Dp_eV)
 add_array("E_cm_D_eV", E_cm_D_eV)
 add_array("E_total_Dp_eV", E_total_Dp / EV_TO_J)
@@ -273,11 +289,13 @@ add_array("E_drift_Dp_eV", E_drift_Dp / EV_TO_J)
 add_array("E_thermal_Dp_eV", E_thermal_Dp / EV_TO_J)
 add_array("sigma_Dp_m2", sigma_Dp)
 add_array("sigma_D_m2", sigma_D)
+add_array("sigma_Dp_physical_m2", sigma_Dp_physical)
+add_array("sigma_D_physical_m2", sigma_D_physical)
 add_array("v_eff_Dp_ms", v_eff_Dp)
 add_array("v_eff_D_ms", v_eff_D)
 
 print("\\nDone! Filter output ready.")
-''' % (N_D2_BACKGROUND, M_D, M_D2, MU_D_D2, EV_TO_J,
+''' % (N_D2_BACKGROUND, M_D, M_D2, MU_D_D2, EV_TO_J, FUSION_BIAS_FACTOR,
        repr(CS_ENERGY.tolist()), repr(CS_SIGMA.tolist()))
 
     prog_filter.Script = script
@@ -287,7 +305,8 @@ print("\\nDone! Filter output ready.")
     print("\nFilter created! New fields:")
     print("  - fusion_rate_R28_Dp_D2  (D+ + D2 rate [reactions/m3/s])")
     print("  - fusion_rate_R29_D_D2   (D  + D2 rate [reactions/m3/s])")
-    print("  - fusion_rate_total      (Total rate [reactions/m3/s])")
+    print("  - fusion_rate_total      (Biased total rate [reactions/m3/s])")
+    print("  - fusion_rate_physical_* (De-biased physical rates [reactions/m3/s])")
     print("  - E_cm_Dp_eV, E_cm_D_eV (CM energy [eV])")
     print("  - E_total_*_eV           (Total KE = drift + thermal [eV])")
     print("  - E_drift_*_eV           (Drift KE only [eV])")
@@ -307,7 +326,7 @@ print("\\nDone! Filter output ready.")
         print("Auto-coloring note: %s" % str(e))
 
     print("\nCheck Python Shell output for DEBUG statistics.")
-    print("If all energies < 1000 eV, no fusion occurs (threshold).")
+    print("If all projectile energies < 2000 eV, no fusion occurs (effective-table threshold).")
 
 
 main()

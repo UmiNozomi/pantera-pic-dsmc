@@ -2,6 +2,7 @@
 # Cross section table (E [eV], sigma [m^2])
 # Source: Yoon et al., J. Phys. Chem. Ref. Data 37, 913–931 (2008), Table 13 (H+ column).
 # Note: values between 18.1 and 30 eV are linear interpolation from threshold to 30 eV.
+# High-energy extension (2-100 keV): Bethe-form tail normalized at 1 keV, I=19 eV.
 -----------------------------
     0.000000  0.000000e+00
     1.000000  0.000000e+00
@@ -55,4 +56,10 @@
   900.000000  1.350000e-22
   950.000000  1.250000e-22
  1000.000000  1.170000e-22
+ 2.000000e+03	6.873111e-23
+ 5.000000e+03	3.290236e-23
+ 1.000000e+04	1.849740e-23
+ 2.000000e+04	1.027181e-23
+ 5.000000e+04	4.649716e-24
+ 1.000000e+05	2.529480e-24
 -----------------------------
