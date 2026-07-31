@@ -1109,6 +1109,8 @@ MODULE timecycle
 
       INTEGER      :: IP, IC, i, SOL, OLD_IC
       INTEGER      :: BOUNDCOLL, WALLCOLL, GOODSOL, FACE_PG, NEIGHBOR
+      INTEGER, PARAMETER :: MAX_WALL_HITS_PER_PARTICLE_STEP = 8
+      INTEGER :: WALL_HITS_THIS_STEP, LAST_WALL_IC, LAST_WALL_FACE
       REAL(KIND=8) :: DTCOLL, TOTDTCOLL, CANDIDATE_DTCOLL, rfp
       REAL(KIND=8) :: COEFA, COEFB, COEFC, DELTA, SOL1, SOL2, ALPHA, BETA
       REAL(KIND=8), DIMENSION(2) :: TEST
@@ -1123,9 +1125,10 @@ MODULE timecycle
       REAL(KIND=8) :: VDOTTANG1, VRM, RN, R1, R2, THETA1, THETA2, DOT_NORM, VTANGENT
       REAL(KIND=8) :: V_NORM, V_TANG1, V_TANG2, V_PERP, VZ, VDUMMY, EROT, EVIB, VDOTN, WALL_TEMP
       REAL(KIND=8) :: IMPACT_ENERGY_EV
-      INTEGER :: S_ID
+      INTEGER :: S_ID, INCIDENT_S_ID
       LOGICAL :: HASCOLLIDED
       REAL(KIND=8) :: XCOLL, YCOLL, COLLDIST, EDGE_X1, EDGE_Y1
+      REAL(KIND=8) :: DOMAIN_LENGTH_SCALE, BOUNDARY_PUSH_DISTANCE, ZERO_TIME_HIT_TOL
       INTEGER, DIMENSION(:), ALLOCATABLE :: LOCAL_BOUNDARY_COLL_COUNT, LOCAL_WALL_COLL_COUNT
       REAL(KIND=8) :: WEIGHT_RATIO
       TYPE(PARTICLE_DATA_STRUCTURE) :: NEWparticle, particleNOW
@@ -1138,11 +1141,18 @@ MODULE timecycle
       INTEGER :: SEE_MATERIAL_ID, N_SEE_SECONDARY, ISE
       REAL(KIND=8), DIMENSION(3) :: IMPACT_POSITION
       TYPE(PARTICLE_DATA_STRUCTURE) :: SEE_SINGLE_PARTICLE
+      LOGICAL :: DUPLICATE_WALL_HIT, END_SUBSTEP_AFTER_WALL
+      LOGICAL, SAVE :: WALL_HIT_LIMIT_WARNED = .FALSE.
 
       REAL(KIND=8) :: VXPRE, VYPRE, VZPRE
 
       
       REAL(KIND=8) :: TOL = 1.0d-15
+
+      DOMAIN_LENGTH_SCALE = MAX(ABS(XMAX-XMIN), ABS(YMAX-YMIN))
+      IF (DIMS == 3) DOMAIN_LENGTH_SCALE = MAX(DOMAIN_LENGTH_SCALE, ABS(ZMAX-ZMIN))
+      BOUNDARY_PUSH_DISTANCE = MAX(1.d-12, 1.d-9*MAX(DOMAIN_LENGTH_SCALE, 1.d-3))
+      ZERO_TIME_HIT_TOL = MAX(TOL, 1.d-6*DT)
 
       E = [0.d0, 0.d0, 0.d0]
       B = [0.d0, 0.d0, 0.d0]
@@ -1242,6 +1252,9 @@ MODULE timecycle
 
          HASCOLLIDED = .FALSE.
          TOTDTCOLL = 0.
+         WALL_HITS_THIS_STEP = 0
+         LAST_WALL_IC = -1
+         LAST_WALL_FACE = -1
          DO WHILE (particles(IP)%DTRIM .GT. 0.) ! Repeat the procedure until step is done
 
             DTCOLL = particles(IP)%DTRIM ! Looking for collisions within the remaining time
@@ -1391,6 +1404,7 @@ MODULE timecycle
 
                IF (BOUNDCOLL .NE. -1) THEN
                   IF (particles(IP)%Y == 0.d0 .AND. DTCOLL == 0.d0) WRITE(*,*) 'Here 1.'
+                  DTCOLL = MAX(0.d0, DTCOLL)
                   CALL MOVE_PARTICLE(IP, DTCOLL)
                   particles(IP)%DTRIM = particles(IP)%DTRIM - DTCOLL
 
@@ -1448,6 +1462,41 @@ MODULE timecycle
 
                      IF (FACE_PG .NE. -1) THEN
 
+                        WALL_HITS_THIS_STEP = WALL_HITS_THIS_STEP + 1
+                        DUPLICATE_WALL_HIT = LAST_WALL_IC == IC .AND. &
+                                             LAST_WALL_FACE == BOUNDCOLL .AND. &
+                                             DTCOLL <= ZERO_TIME_HIT_TOL
+                        END_SUBSTEP_AFTER_WALL = &
+                           WALL_HITS_THIS_STEP >= MAX_WALL_HITS_PER_PARTICLE_STEP
+
+                        IF (DUPLICATE_WALL_HIT) THEN
+                           ! No resolvable free flight occurred since the preceding
+                           ! hit on this exact face. Treat it as the same physical
+                           ! wall event, so wall chemistry, current accounting, and
+                           ! secondary-electron emission are not repeated.
+                           particles(IP)%X = particles(IP)%X + &
+                                             BOUNDARY_PUSH_DISTANCE*FACE_NORMAL(1)
+                           particles(IP)%Y = particles(IP)%Y + &
+                                             BOUNDARY_PUSH_DISTANCE*FACE_NORMAL(2)
+                           particles(IP)%Z = particles(IP)%Z + &
+                                             BOUNDARY_PUSH_DISTANCE*FACE_NORMAL(3)
+                           rfp = MIN(ZERO_TIME_HIT_TOL, particles(IP)%DTRIM)
+                           particles(IP)%DTRIM = MAX(0.d0, particles(IP)%DTRIM-rfp)
+                           IF (END_SUBSTEP_AFTER_WALL) THEN
+                              particles(IP)%DTRIM = 0.d0
+                              IF (.NOT. WALL_HIT_LIMIT_WARNED) THEN
+                                 WRITE(*,'(A,I0,A,I0,A,I0)') &
+                                    ' WARNING: rank ', PROC_ID, ' ended timestep ', tID, &
+                                    ' after repeated zero-time wall hits for particle ', particles(IP)%ID
+                                 WALL_HIT_LIMIT_WARNED = .TRUE.
+                              END IF
+                           END IF
+                           CYCLE
+                        END IF
+
+                        LAST_WALL_IC = IC
+                        LAST_WALL_FACE = BOUNDCOLL
+
                         IF (GRID_BC(FACE_PG)%DUMP_FLUXES .AND. (tID .GE. DUMP_PART_BOUND_START)) THEN
                            particleNOW = particles(IP)
                            CALL ADD_PARTICLE_ARRAY(particleNOW, NP_DUMP_PROC, part_dump)
@@ -1462,41 +1511,7 @@ MODULE timecycle
                         END IF
 
                         
-                        CHARGE = SPECIES(particles(IP)%S_ID)%CHARGE
-                        IF ( (GRID_BC(FACE_PG)%FIELD_BC == DIELECTRIC_BC &
-                           .OR.GRID_BC(FACE_PG)%FIELD_BC == CONDUCTIVE_BC) .AND. ABS(CHARGE) .GE. 1.d-6) THEN
-                           K = QE/(EPS0*EPS_SCALING**2)
-                           IF (DIMS == 1) THEN
-                              RHO_Q = K*CHARGE*FNUM/(YMAX-YMIN)/(ZMAX-ZMIN)
-                              DO I = 1, 2
-                                 VP = U1D_GRID%CELL_NODES(I,IC)
-                                 PSIP = U1D_GRID%BASIS_COEFFS(1,I,IC)*particles(IP)%X &
-                                      + U1D_GRID%BASIS_COEFFS(3,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
-                              END DO
-                           ELSE IF (DIMS == 2) THEN
-                              RHO_Q = K*CHARGE*FNUM/(ZMAX-ZMIN)
-                              DO I = 1, 3
-                                 VP = U2D_GRID%CELL_NODES(I,IC)
-                                 PSIP = U2D_GRID%BASIS_COEFFS(1,I,IC)*particles(IP)%X &
-                                      + U2D_GRID%BASIS_COEFFS(2,I,IC)*particles(IP)%Y &
-                                      + U2D_GRID%BASIS_COEFFS(3,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
-                              END DO
-                           ELSE IF (DIMS == 3) THEN
-                              RHO_Q = K*CHARGE*FNUM
-                              DO I = 1, 4
-                                 VP = U3D_GRID%CELL_NODES(I,IC)
-                                 PSIP = U3D_GRID%BASIS_COEFFS(1,I,IC)*particles(IP)%X &
-                                      + U3D_GRID%BASIS_COEFFS(2,I,IC)*particles(IP)%Y &
-                                      + U3D_GRID%BASIS_COEFFS(3,I,IC)*particles(IP)%Z &
-                                      + U3D_GRID%BASIS_COEFFS(4,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
-                              END DO
-                           END IF
-                        ELSE IF (GRID_BC(FACE_PG)%FIELD_BC == SPICE_NODE_BC .AND. ABS(CHARGE) .GE. 1.d-6) THEN
-                           GRID_BC(FACE_PG)%SPICE_NODE_CURRENT = GRID_BC(FACE_PG)%SPICE_NODE_CURRENT + QE*FNUM*CHARGE/DT
-                        END IF
+                        INCIDENT_S_ID = particles(IP)%S_ID
 
                         N_SEE_SECONDARY = 0
 
@@ -1521,37 +1536,6 @@ MODULE timecycle
                                        END IF
                                     END IF
                                  END DO
-                              END IF
-                           END IF
-
-                           ! ===== Constant current control: accumulate current statistics =====
-                           IF (GRID_BC(FACE_PG)%IS_CONSTANT_CURRENT) THEN
-                              ! Get particle weight
-                              IF (BOOL_RADIAL_WEIGHTING) THEN
-                                 WEIGHT_RATIO = CELL_FNUM(particles(IP)%IC)
-                              ELSE
-                                 WEIGHT_RATIO = FNUM
-                              END IF
-                              
-                              CHARGE = SPECIES(particles(IP)%S_ID)%CHARGE
-                              WEIGHT_RATIO = WEIGHT_RATIO * SPECIES(particles(IP)%S_ID)%SPWT
-                              
-                              ! 1. Impact current (ions positive, electrons negative)
-                              IF (CHARGE > 0.5d0) THEN
-                                 ! Positive ion impact
-                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION = &
-                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION + QE * CHARGE * WEIGHT_RATIO
-                              ELSE IF (CHARGE < -0.5d0) THEN
-                                 ! Electron/negative ion impact
-                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC = &
-                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC + QE * CHARGE * WEIGHT_RATIO
-                              END IF
-                              
-                              ! 2. SEE current (secondary electron emission, positive contribution)
-                              IF (N_SEE_SECONDARY > 0) THEN
-                                 ! SEE electrons emitted from electrode (electron loss = positive current)
-                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE = &
-                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE + QE * DBLE(N_SEE_SECONDARY) * WEIGHT_RATIO
                               END IF
                            END IF
 
@@ -1586,37 +1570,6 @@ MODULE timecycle
                                        END IF
                                     END IF
                                  END DO
-                              END IF
-                           END IF
-
-                           ! ===== Constant current control: accumulate current statistics =====
-                           IF (GRID_BC(FACE_PG)%IS_CONSTANT_CURRENT) THEN
-                              ! Get particle weight
-                              IF (BOOL_RADIAL_WEIGHTING) THEN
-                                 WEIGHT_RATIO = CELL_FNUM(particles(IP)%IC)
-                              ELSE
-                                 WEIGHT_RATIO = FNUM
-                              END IF
-                              
-                              CHARGE = SPECIES(particles(IP)%S_ID)%CHARGE
-                              WEIGHT_RATIO = WEIGHT_RATIO * SPECIES(particles(IP)%S_ID)%SPWT
-                              
-                              ! 1. Impact current (ions positive, electrons negative)
-                              IF (CHARGE > 0.5d0) THEN
-                                 ! Positive ion impact
-                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION = &
-                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION + QE * CHARGE * WEIGHT_RATIO
-                              ELSE IF (CHARGE < -0.5d0) THEN
-                                 ! Electron/negative ion impact
-                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC = &
-                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC + QE * CHARGE * WEIGHT_RATIO
-                              END IF
-                              
-                              ! 2. SEE current (secondary electron emission, positive contribution)
-                              IF (N_SEE_SECONDARY > 0) THEN
-                                 ! SEE electrons emitted from electrode (electron loss = positive current)
-                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE = &
-                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE + QE * DBLE(N_SEE_SECONDARY) * WEIGHT_RATIO
                               END IF
                            END IF
 
@@ -1679,31 +1632,6 @@ MODULE timecycle
                                        END IF
                                     END IF
                                  END DO
-                              END IF
-                           END IF
-
-                           ! ===== Constant current control: accumulate current statistics =====
-                           IF (GRID_BC(FACE_PG)%IS_CONSTANT_CURRENT) THEN
-                              IF (BOOL_RADIAL_WEIGHTING) THEN
-                                 WEIGHT_RATIO = CELL_FNUM(particles(IP)%IC)
-                              ELSE
-                                 WEIGHT_RATIO = FNUM
-                              END IF
-
-                              CHARGE = SPECIES(particles(IP)%S_ID)%CHARGE
-                              WEIGHT_RATIO = WEIGHT_RATIO * SPECIES(particles(IP)%S_ID)%SPWT
-
-                              IF (CHARGE > 0.5d0) THEN
-                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION = &
-                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION + QE * CHARGE * WEIGHT_RATIO
-                              ELSE IF (CHARGE < -0.5d0) THEN
-                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC = &
-                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC + QE * CHARGE * WEIGHT_RATIO
-                              END IF
-
-                              IF (N_SEE_SECONDARY > 0) THEN
-                                 GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE = &
-                                    GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE + QE * DBLE(N_SEE_SECONDARY) * WEIGHT_RATIO
                               END IF
                            END IF
 
@@ -1850,18 +1778,37 @@ MODULE timecycle
                            REMOVE_PART(IP) = .TRUE.
                            particles(IP)%DTRIM = 0.d0
                         END IF
+                        CALL DEPOSIT_NET_SURFACE_CHARGE(IC, particles(IP)%X, &
+                           particles(IP)%Y, particles(IP)%Z, FACE_PG, INCIDENT_S_ID, &
+                           particles(IP)%S_ID, .NOT. REMOVE_PART(IP), N_SEE_SECONDARY)
+
+                        CALL TALLY_NET_BOUNDARY_CURRENT(IC, FACE_PG, INCIDENT_S_ID, &
+                           particles(IP)%S_ID, .NOT. REMOVE_PART(IP), N_SEE_SECONDARY)
+
 
 
                         ! Tally reflected particle fluxes to boundary
                         IF (.NOT. REMOVE_PART(IP)) THEN
-                           ! Move the reflected particle a tiny distance back into
-                           ! the fluid domain and consume a tiny fraction of the
-                           ! remaining substep. This prevents pathological
-                           ! zero-time recollisions on the same wall.
-                           rfp = MIN(MAX(1.d-15, 1.d-9*DT), particles(IP)%DTRIM)
-                           IF (rfp > 0.d0) THEN
-                              CALL MOVE_PARTICLE(IP, rfp)
-                              particles(IP)%DTRIM = MAX(0.d0, particles(IP)%DTRIM - rfp)
+                           ! FACE_NORMAL points into the fluid cell. A geometric
+                           ! offset is reliable for grazing and slow reflections,
+                           ! for which a tiny time advance may remain on the face.
+                           particles(IP)%X = particles(IP)%X + &
+                                             BOUNDARY_PUSH_DISTANCE*FACE_NORMAL(1)
+                           particles(IP)%Y = particles(IP)%Y + &
+                                             BOUNDARY_PUSH_DISTANCE*FACE_NORMAL(2)
+                           particles(IP)%Z = particles(IP)%Z + &
+                                             BOUNDARY_PUSH_DISTANCE*FACE_NORMAL(3)
+                           rfp = MIN(ZERO_TIME_HIT_TOL, particles(IP)%DTRIM)
+                           particles(IP)%DTRIM = MAX(0.d0, particles(IP)%DTRIM-rfp)
+
+                           IF (END_SUBSTEP_AFTER_WALL) THEN
+                              particles(IP)%DTRIM = 0.d0
+                              IF (.NOT. WALL_HIT_LIMIT_WARNED) THEN
+                                 WRITE(*,'(A,I0,A,I0,A,I0)') &
+                                    ' WARNING: rank ', PROC_ID, ' limited wall hits in timestep ', tID, &
+                                    ' for particle ', particles(IP)%ID
+                                 WALL_HIT_LIMIT_WARNED = .TRUE.
+                              END IF
                            END IF
 
                            IF ((tID .GE. DUMP_GRID_START) .AND. (tID .NE. RESTART_TIMESTEP)) THEN
@@ -1870,10 +1817,6 @@ MODULE timecycle
                               END IF
                            END IF
 
-                           CHARGE = SPECIES(particles(IP)%S_ID)%CHARGE
-                           IF (GRID_BC(FACE_PG)%FIELD_BC == SPICE_NODE_BC .AND. ABS(CHARGE) .GE. 1.d-6) THEN
-                              GRID_BC(FACE_PG)%SPICE_NODE_CURRENT = GRID_BC(FACE_PG)%SPICE_NODE_CURRENT - QE*FNUM*CHARGE/DT
-                           END IF
                         END IF
                      ELSE
                         REMOVE_PART(IP) = .TRUE.

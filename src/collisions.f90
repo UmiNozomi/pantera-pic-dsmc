@@ -20,6 +20,7 @@
 
 MODULE collisions
 
+   USE relativistic_collision_core, ONLY: RELATIVISTIC_TWO_BODY_SCATTER
    USE global
    USE mpi_common
    USE screen
@@ -1660,12 +1661,13 @@ MODULE collisions
       REAL(KIND=8) :: BG_NRHO
       REAL(KIND=8) :: FRAC, SIGMA_R
       REAL(KIND=8) :: PI2
-      REAL(KIND=8), DIMENSION(3) :: C1, C2
+      REAL(KIND=8), DIMENSION(3) :: C1, C2, SCATTER_DIRECTION
       REAL(KIND=8) :: VR2, VR, MRED, M1, M2
       REAL(KIND=8) :: EI, ETR, E_LOOKUP, ECOLL, TOTDOF, EA, EA_CM, EROT, EVIB
+      REAL(KIND=8) :: COS_SCATTER, SIN_SCATTER, THETA_SCATTER
       TYPE(PARTICLE_DATA_STRUCTURE) :: NEWparticle
       REAL(KIND=8) :: NULL_COLL_FREQ, P_NULL, R_SELECT, P_CUMULATED
-      LOGICAL :: HAS_REACTED
+      LOGICAL :: HAS_REACTED, REL_SCATTER_OK
       ! Spectral diagnostics variables
       REAL(KIND=8) :: vLOS
       INTEGER :: EMITTER_ID, JC
@@ -1784,7 +1786,12 @@ MODULE collisions
 
                   ! Actually create the second collision partner
                   CALL INTERNAL_ENERGY(SPECIES(SP_ID2)%ROTDOF, MCC_BG_TTRA, EROT)
-                  CALL INTERNAL_ENERGY(SPECIES(SP_ID2)%VIBDOF, MCC_BG_TTRA, EVIB)
+                  IF (REACTIONS(JR)%KINEMATICS == REACTION_KIN_VIBRATIONAL) THEN
+                     ! The Laporta channel is explicitly D2(X,v=0) -> D2(X,v=1).
+                     EVIB = 0.d0
+                  ELSE
+                     CALL INTERNAL_ENERGY(SPECIES(SP_ID2)%VIBDOF, MCC_BG_TTRA, EVIB)
+                  END IF
                   CALL INIT_PARTICLE(particles(JP1)%X,particles(JP1)%Y,particles(JP1)%Z, &
                   C2(1),C2(2),C2(3),EROT,EVIB,SP_ID2,particles(JP1)%IC,DT, NEWparticle)
 
@@ -1802,7 +1809,6 @@ MODULE collisions
 
                   !WRITE(*,*) 'Reacting!'
                   ! React
-                  ECOLL = MAX(0.d0, ETR - EA_CM + REACTIONS(JR)%Q_VALUE)
 
                   ! Use R1 as P1 and assign internal energy to it.
                   ! Use R2 as P2 (or P2+P3) (Set R2 as the molecule that dissociates in P2+P3)
@@ -1816,7 +1822,59 @@ MODULE collisions
                   particles(JP2)%S_ID = REACTIONS(JR)%P2_SP_ID
 
 
-                  IF (.NOT. REACTIONS(JR)%IS_CEX) THEN
+                  IF (REACTIONS(JR)%KINEMATICS == REACTION_KIN_ELASTIC) THEN
+
+                     ! A tabulated electron elastic event is a two-body
+                     ! collision, not complete internal-energy relaxation.
+                     M1 = SPECIES(P1_SP_ID)%MOLECULAR_MASS
+                     M2 = SPECIES(P2_SP_ID)%MOLECULAR_MASS
+                     COS_SCATTER = 2.d0*rf()-1.d0
+                     SIN_SCATTER = SQRT(MAX(0.d0, 1.d0-COS_SCATTER*COS_SCATTER))
+                     THETA_SCATTER = PI2*rf()
+                     SCATTER_DIRECTION(1) = SIN_SCATTER*COS(THETA_SCATTER)
+                     SCATTER_DIRECTION(2) = SIN_SCATTER*SIN(THETA_SCATTER)
+                     SCATTER_DIRECTION(3) = COS_SCATTER
+                     CALL RELATIVISTIC_TWO_BODY_SCATTER(M1, M2, C1, C2, 0.d0, &
+                                                        SCATTER_DIRECTION, REL_SCATTER_OK)
+                     IF (.NOT. REL_SCATTER_OK) &
+                        CALL ERROR_ABORT('Relativistic elastic two-body scattering failed.')
+
+                     particles(JP1)%VX = C1(1)
+                     particles(JP1)%VY = C1(2)
+                     particles(JP1)%VZ = C1(3)
+                     particles(JP2)%VX = C2(1)
+                     particles(JP2)%VY = C2(2)
+                     particles(JP2)%VZ = C2(3)
+
+                  ELSE IF (REACTIONS(JR)%KINEMATICS == REACTION_KIN_VIBRATIONAL) THEN
+
+                     ! EVIB is a scalar laboratory-frame reservoir in the
+                     ! current particle model. Remove one full quantum from
+                     ! lab-frame translation and add it exactly once.
+                     M1 = SPECIES(P1_SP_ID)%MOLECULAR_MASS
+                     M2 = SPECIES(P2_SP_ID)%MOLECULAR_MASS
+                     particles(JP2)%EVIB = 0.d0
+                     COS_SCATTER = 2.d0*rf()-1.d0
+                     SIN_SCATTER = SQRT(MAX(0.d0, 1.d0-COS_SCATTER*COS_SCATTER))
+                     THETA_SCATTER = PI2*rf()
+                     SCATTER_DIRECTION(1) = SIN_SCATTER*COS(THETA_SCATTER)
+                     SCATTER_DIRECTION(2) = SIN_SCATTER*SIN(THETA_SCATTER)
+                     SCATTER_DIRECTION(3) = COS_SCATTER
+                     CALL RELATIVISTIC_TWO_BODY_SCATTER(M1, M2, C1, C2, EA, &
+                                                        SCATTER_DIRECTION, REL_SCATTER_OK)
+                     IF (.NOT. REL_SCATTER_OK) &
+                        CALL ERROR_ABORT('Relativistic vibrational two-body scattering failed.')
+                     particles(JP2)%EVIB = particles(JP2)%EVIB + EA
+
+                     particles(JP1)%VX = C1(1)
+                     particles(JP1)%VY = C1(2)
+                     particles(JP1)%VZ = C1(3)
+                     particles(JP2)%VX = C2(1)
+                     particles(JP2)%VY = C2(2)
+                     particles(JP2)%VZ = C2(3)
+
+                  ELSE IF (.NOT. REACTIONS(JR)%IS_CEX) THEN
+                     ECOLL = MAX(0.d0, ETR - EA_CM + REACTIONS(JR)%Q_VALUE)
       
                      TOTDOF = 3. + SPECIES(P2_SP_ID)%ROTDOF + SPECIES(P2_SP_ID)%VIBDOF + &
                            SPECIES(P1_SP_ID)%ROTDOF

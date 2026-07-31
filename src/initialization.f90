@@ -20,6 +20,7 @@
 
 MODULE initialization
 
+   USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
    USE global
    USE screen
    USE mpi_common
@@ -129,6 +130,11 @@ MODULE initialization
          IF (line=='Boundary_condition:') THEN
             READ(in1,'(A)') BC_DEFINITION
             CALL DEF_BOUNDARY_CONDITION(BC_DEFINITION)
+         END IF
+
+         IF (line=='Boundary_voltage_ramp:') THEN
+            READ(in1,'(A)') BC_DEFINITION
+            CALL DEF_BOUNDARY_VOLTAGE_RAMP(BC_DEFINITION)
          END IF
 
          IF (line=='Domain_type:') THEN
@@ -1187,7 +1193,11 @@ MODULE initialization
       ELSE IF (STRARRAY(2) == 'constant_current') THEN
          GRID_BC(IPG)%FIELD_BC = DIRICHLET_BC
          GRID_BC(IPG)%IS_CONSTANT_CURRENT = .TRUE.
-         
+
+         IF (N_STR < 7 .OR. N_STR > 13) THEN
+            CALL ERROR_ABORT('constant_current expects 5 to 11 parameters.')
+         END IF
+
          READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%TARGET_CURRENT
          READ(STRARRAY(4), '(ES14.0)') GRID_BC(IPG)%INITIAL_VOLTAGE
          READ(STRARRAY(5), '(ES14.0)') GRID_BC(IPG)%PID_KP
@@ -1211,7 +1221,8 @@ MODULE initialization
             READ(STRARRAY(10), '(ES14.0)') GRID_BC(IPG)%VOLTAGE_MAX
          END IF
 
-         ! Optional: Anti-windup / PI activation ratios (parameters 11 and 12)
+         ! Parameters 11 and 12 are retained for backwards-compatible input
+         ! parsing.  The positional PID now uses constraint-based anti-windup.
          IF (N_STR >= 11) THEN
             READ(STRARRAY(11), '(ES14.0)') GRID_BC(IPG)%PID_I_ACTIVATE_RATIO
          END IF
@@ -1223,7 +1234,56 @@ MODULE initialization
          GRID_BC(IPG)%PID_I_ACTIVATE_RATIO = MAX(0.d0, MIN(1.d0, GRID_BC(IPG)%PID_I_ACTIVATE_RATIO))
          GRID_BC(IPG)%PID_I_FULL_RATIO = MAX(GRID_BC(IPG)%PID_I_ACTIVATE_RATIO + 1.d-6, &
                                              GRID_BC(IPG)%PID_I_FULL_RATIO)
-         
+
+         ! Optional parameter 13: maximum voltage change per PID update [V].
+         IF (N_STR >= 13) THEN
+            READ(STRARRAY(13), '(ES14.0)') GRID_BC(IPG)%MAX_VOLTAGE_STEP
+         END IF
+
+         IF (.NOT. IEEE_IS_FINITE(GRID_BC(IPG)%TARGET_CURRENT) .OR. &
+             .NOT. IEEE_IS_FINITE(GRID_BC(IPG)%INITIAL_VOLTAGE) .OR. &
+             .NOT. IEEE_IS_FINITE(GRID_BC(IPG)%PID_KP) .OR. &
+             .NOT. IEEE_IS_FINITE(GRID_BC(IPG)%PID_KI) .OR. &
+             .NOT. IEEE_IS_FINITE(GRID_BC(IPG)%PID_KD) .OR. &
+             .NOT. IEEE_IS_FINITE(GRID_BC(IPG)%MAX_VOLTAGE_STEP)) THEN
+            CALL ERROR_ABORT('constant_current parameters must be finite.')
+         END IF
+         IF (GRID_BC(IPG)%TARGET_CURRENT <= 0.d0 .OR. &
+             GRID_BC(IPG)%INITIAL_VOLTAGE >= 0.d0) THEN
+            CALL ERROR_ABORT( &
+               'constant_current currently supports a negative cathode voltage and positive conventional current only.')
+         END IF
+         IF (GRID_BC(IPG)%PID_KP < 0.d0 .OR. &
+             GRID_BC(IPG)%PID_KI < 0.d0 .OR. &
+             GRID_BC(IPG)%PID_KD < 0.d0) THEN
+            CALL ERROR_ABORT('constant_current PID gains must be non-negative.')
+         END IF
+         IF (GRID_BC(IPG)%PID_KP + GRID_BC(IPG)%PID_KI + &
+             GRID_BC(IPG)%PID_KD <= 0.d0) THEN
+            CALL ERROR_ABORT('constant_current requires at least one non-zero PID gain.')
+         END IF
+         IF (GRID_BC(IPG)%MAX_VOLTAGE_STEP <= 0.d0) THEN
+            CALL ERROR_ABORT('constant_current maximum voltage step must be positive.')
+         END IF
+         IF (GRID_BC(IPG)%APPLY_VOLTAGE_LIMITS) THEN
+            IF (.NOT. IEEE_IS_FINITE(GRID_BC(IPG)%VOLTAGE_MIN) .OR. &
+                .NOT. IEEE_IS_FINITE(GRID_BC(IPG)%VOLTAGE_MAX)) THEN
+               CALL ERROR_ABORT('constant_current voltage limits must be finite.')
+            END IF
+            IF (GRID_BC(IPG)%VOLTAGE_MIN >= GRID_BC(IPG)%VOLTAGE_MAX) THEN
+               CALL ERROR_ABORT('constant_current voltage_min must be below voltage_max.')
+            END IF
+            IF (GRID_BC(IPG)%INITIAL_VOLTAGE < GRID_BC(IPG)%VOLTAGE_MIN .OR. &
+                GRID_BC(IPG)%INITIAL_VOLTAGE > GRID_BC(IPG)%VOLTAGE_MAX) THEN
+               CALL ERROR_ABORT('constant_current initial voltage is outside its limits.')
+            END IF
+         END IF
+         IF (GRID_BC(IPG)%PID_KI > 0.d0 .AND. &
+             (.NOT. GRID_BC(IPG)%APPLY_VOLTAGE_LIMITS .OR. N_STR < 13)) THEN
+            CALL ERROR_ABORT( &
+               'constant_current with integral gain requires voltage limits and max_voltage_step.')
+         END IF
+
          GRID_BC(IPG)%WALL_POTENTIAL = GRID_BC(IPG)%INITIAL_VOLTAGE
          
          ALLOCATE(GRID_BC(IPG)%CURRENT_WINDOW_ION(GRID_BC(IPG)%SLIDING_WINDOW_SIZE))
@@ -1236,6 +1296,10 @@ MODULE initialization
          GRID_BC(IPG)%WINDOW_INDEX = 0
          GRID_BC(IPG)%WINDOW_SAMPLE_COUNT = 0
          GRID_BC(IPG)%STEPS_SINCE_PID_UPDATE = 0
+         GRID_BC(IPG)%ERROR_INTEGRAL = 0.d0
+         GRID_BC(IPG)%ERROR_PREV = 0.d0
+         GRID_BC(IPG)%CC_MODE_ACTIVE = .FALSE.
+         GRID_BC(IPG)%CC_CONTROL_LIMITED = .FALSE.
          
          IF (PROC_ID == 0) THEN
             WRITE(*,'(A,A,A,ES10.3,A)') '> Constant current BC: ', TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME), &
@@ -1392,6 +1456,67 @@ MODULE initialization
 
 
    END SUBROUTINE DEF_BOUNDARY_DUMP_FLUXES
+
+   SUBROUTINE DEF_BOUNDARY_VOLTAGE_RAMP(DEFINITION)
+
+      IMPLICIT NONE
+
+      CHARACTER(LEN=*), INTENT(IN) :: DEFINITION
+
+      INTEGER :: N_STR, I, IPG
+      CHARACTER(LEN=80), ALLOCATABLE :: STRARRAY(:)
+
+      CALL SPLIT_STR(DEFINITION, ' ', STRARRAY, N_STR)
+
+      IF (N_STR /= 3) THEN
+         CALL ERROR_ABORT( &
+            'Boundary_voltage_ramp expects: group start_voltage[V] duration[s].')
+      END IF
+
+      IPG = -1
+      DO I = 1, N_GRID_BC
+         IF (GRID_BC(I)%PHYSICAL_GROUP_NAME == STRARRAY(1)) IPG = I
+      END DO
+      IF (IPG == -1) THEN
+         CALL ERROR_ABORT( &
+            'Boundary_voltage_ramp group name was not found.')
+      END IF
+      IF (.NOT. GRID_BC(IPG)%IS_CONSTANT_CURRENT) THEN
+         CALL ERROR_ABORT( &
+            'Boundary_voltage_ramp must follow constant_current for the same group.')
+      END IF
+
+      READ(STRARRAY(2), '(ES14.0)') GRID_BC(IPG)%STARTUP_RAMP_VOLTAGE
+      READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%STARTUP_RAMP_TIME
+
+      IF (.NOT. IEEE_IS_FINITE(GRID_BC(IPG)%STARTUP_RAMP_VOLTAGE) .OR. &
+          .NOT. IEEE_IS_FINITE(GRID_BC(IPG)%STARTUP_RAMP_TIME)) THEN
+         CALL ERROR_ABORT('Boundary_voltage_ramp parameters must be finite.')
+      END IF
+      IF (GRID_BC(IPG)%STARTUP_RAMP_TIME <= 0.d0) THEN
+         CALL ERROR_ABORT('Boundary_voltage_ramp duration must be positive.')
+      END IF
+      IF (GRID_BC(IPG)%STARTUP_RAMP_VOLTAGE < &
+          GRID_BC(IPG)%INITIAL_VOLTAGE .OR. &
+          GRID_BC(IPG)%STARTUP_RAMP_VOLTAGE > 0.d0) THEN
+         CALL ERROR_ABORT( &
+            'Cathode startup ramp voltage must lie between INITIAL_VOLTAGE and 0 V.')
+      END IF
+
+      GRID_BC(IPG)%STARTUP_RAMP_ENABLED = .TRUE.
+      GRID_BC(IPG)%STARTUP_RAMP_COMPLETE = .FALSE.
+      GRID_BC(IPG)%WALL_POTENTIAL = GRID_BC(IPG)%STARTUP_RAMP_VOLTAGE
+
+      IF (PROC_ID == 0) THEN
+         WRITE(*,'(A,A,A,ES10.3,A,ES10.3,A)') '> Startup voltage ramp: ', &
+            TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME), ' (', &
+            GRID_BC(IPG)%STARTUP_RAMP_VOLTAGE, ' V -> ', &
+            GRID_BC(IPG)%INITIAL_VOLTAGE, ' V)'
+         WRITE(*,'(A,ES10.3,A)') '  Ramp duration: ', &
+            GRID_BC(IPG)%STARTUP_RAMP_TIME, ' s'
+      END IF
+
+   END SUBROUTINE DEF_BOUNDARY_VOLTAGE_RAMP
 
 
 
@@ -1778,6 +1903,14 @@ MODULE initialization
          CALL SPLIT_STR(DEFINITION, ' ', STRARRAY, N_STR)
 
          IF (N_STR == 0) CYCLE ! This is an empty line
+         IF (N_STR /= 7 .AND. N_STR /= 9 .AND. N_STR /= 11) THEN
+            WRITE(*,*) 'Line in reactions file:', DEFINITION
+            CALL ERROR_ABORT( &
+               'Reaction definition must contain two reactants and two to four products.')
+         END IF
+         ! NEW_REACTION is reused by this loop; reset optional behaviour
+         ! before parsing the next definition.
+         NEW_REACTION%KINEMATICS = REACTION_KIN_STATISTICAL
          IF (STRARRAY(2) .NE. '+' .OR. (STRARRAY(4) .NE. '-->' .AND. STRARRAY(4) .NE. '-CEX->') .OR. STRARRAY(6) .NE. '+') THEN
             WRITE(*,*) 'Line in reactions file:', DEFINITION
             CALL ERROR_ABORT('Attention, format is not respected in reactions file.')
@@ -1825,6 +1958,9 @@ MODULE initialization
 
          READ(in3,'(A)', IOSTAT=ReasonEOF) DEFINITION ! Read reaction parameters line
          CALL SPLIT_STR(DEFINITION, ' ', STRARRAY, N_STR)
+         IF (N_STR == 0) THEN
+            CALL ERROR_ABORT('Reaction parameters line cannot be empty.')
+         END IF
          IF (STRARRAY(1) == 'tce') THEN
             NEW_REACTION%TYPE = TCE
             IF (NEW_REACTION%IS_CEX) THEN
@@ -1839,12 +1975,32 @@ MODULE initialization
          ELSE IF (STRARRAY(1) == 'lxcat' .OR. STRARRAY(1) == 'lxcat_fusion') THEN
             NEW_REACTION%TYPE = LXCAT
             NEW_REACTION%Q_VALUE = 0.d0
-            READ(STRARRAY(2), *) NEW_REACTION%EA
             IF (STRARRAY(1) == 'lxcat_fusion') THEN
+               IF (N_STR /= 4) THEN
+                  CALL ERROR_ABORT('lxcat_fusion format: lxcat_fusion <threshold_eV> <Q_eV> <file>')
+               END IF
+               READ(STRARRAY(2), *) NEW_REACTION%EA
                READ(STRARRAY(3), *) NEW_REACTION%Q_VALUE
                READ(STRARRAY(4), *) REACTION_FILENAME
             ELSE
+               IF (N_STR < 3 .OR. N_STR > 4) THEN
+                  CALL ERROR_ABORT('lxcat format: lxcat <threshold_eV> <file> [statistical|elastic|vibrational]')
+               END IF
+               READ(STRARRAY(2), *) NEW_REACTION%EA
                READ(STRARRAY(3), *) REACTION_FILENAME
+               IF (N_STR == 4) THEN
+                  SELECT CASE (TRIM(STRARRAY(4)))
+                  CASE ('statistical')
+                     NEW_REACTION%KINEMATICS = REACTION_KIN_STATISTICAL
+                  CASE ('elastic')
+                     NEW_REACTION%KINEMATICS = REACTION_KIN_ELASTIC
+                  CASE ('vibrational')
+                     NEW_REACTION%KINEMATICS = REACTION_KIN_VIBRATIONAL
+                  CASE DEFAULT
+                     WRITE(*,*) 'Invalid LXCat kinematics subtype: ', TRIM(STRARRAY(4))
+                     CALL ERROR_ABORT('Expected statistical, elastic, or vibrational.')
+                  END SELECT
+               END IF
             END IF
 
 
@@ -1898,6 +2054,25 @@ MODULE initialization
 
          NEW_REACTION%EA = NEW_REACTION%EA * QE
          NEW_REACTION%Q_VALUE = NEW_REACTION%Q_VALUE * QE
+         IF (NEW_REACTION%KINEMATICS /= REACTION_KIN_STATISTICAL) THEN
+            IF (NEW_REACTION%TYPE /= LXCAT .OR. NEW_REACTION%IS_CEX .OR. &
+                NEW_REACTION%N_PROD /= 2 .OR. &
+                NEW_REACTION%P1_SP_ID /= NEW_REACTION%R1_SP_ID .OR. &
+                NEW_REACTION%P2_SP_ID /= NEW_REACTION%R2_SP_ID .OR. &
+                ABS(NEW_REACTION%Q_VALUE) > 1.d-30) THEN
+               CALL ERROR_ABORT('Explicit kinematics require a two-body identity reaction with Q=0.')
+            END IF
+            IF (NEW_REACTION%KINEMATICS == REACTION_KIN_ELASTIC .AND. &
+                ABS(NEW_REACTION%EA) > 1.d-30) THEN
+               CALL ERROR_ABORT('Elastic kinematics require a zero threshold.')
+            END IF
+            IF (NEW_REACTION%KINEMATICS == REACTION_KIN_VIBRATIONAL) THEN
+               IF (NEW_REACTION%EA <= 0.d0 .OR. &
+                   SPECIES(NEW_REACTION%P2_SP_ID)%VIBDOF <= 0) THEN
+                  CALL ERROR_ABORT('Vibrational kinematics require a positive loss and a vibrational target.')
+               END IF
+            END IF
+         END IF
          NEW_REACTION%COUNTS = 0
          NEW_REACTION%COUNTS_CUM = 0_8
          
@@ -2549,7 +2724,9 @@ MODULE initialization
    SUBROUTINE INPUT_DATA_SANITY_CHECK
 
       IMPLICIT NONE
- 
+
+      INTEGER :: IPG, JR
+
       ! ------------ Check values for number of cells ------------
       IF ( GRID_TYPE .NE. UNSTRUCTURED .AND. ((NX < 1) .OR. (NY < 1)) ) THEN
          CALL ERROR_ABORT('ERROR! Number of cells along X or Y smaller than one. ABORTING!')
@@ -2582,6 +2759,37 @@ MODULE initialization
       IF (PIC_TYPE == HYBRID .AND. (BOLTZ_N0 == 0. .OR. BOLTZ_TE == 0.)) THEN
          WRITE(*,*) BOLTZ_N0, BOLTZ_TE
          CALL ERROR_ABORT('Hybrid PIC Type was chosen but proper parameter setting for fluid electrons is missing.')
+      END IF
+
+      ! Net boundary-current accounting is currently implemented only at the
+      ! common exit of the unstructured explicit particle advector.
+      IF (ALLOCATED(GRID_BC)) THEN
+         DO IPG = 1, N_GRID_BC
+            IF (.NOT. GRID_BC(IPG)%IS_CONSTANT_CURRENT) CYCLE
+            IF (GRID_TYPE /= UNSTRUCTURED) THEN
+               CALL ERROR_ABORT('constant_current currently requires an unstructured grid.')
+            END IF
+            IF (PIC_TYPE /= EXPLICIT .AND. PIC_TYPE /= EXPLICITLIMITED) THEN
+               CALL ERROR_ABORT( &
+                  'constant_current currently requires explicit or explicitlimited PIC.')
+            END IF
+            IF (GRID_BC(IPG)%FIELD_BC /= DIRICHLET_BC) THEN
+               CALL ERROR_ABORT('constant_current boundary must retain a Dirichlet field condition.')
+            END IF
+         END DO
+      END IF
+
+      ! Explicit elastic/vibrational kinematics are implemented by the
+      ! Vahedi MCC executor; reject configurations that would silently fall
+      ! back to the legacy statistical redistribution in another executor.
+      IF (ALLOCATED(REACTIONS)) THEN
+         DO JR = 1, N_REACTIONS
+            IF (REACTIONS(JR)%KINEMATICS /= REACTION_KIN_STATISTICAL .AND. &
+                COLLISION_TYPE /= MCC_VAHEDI) THEN
+               CALL ERROR_ABORT( &
+                  'Explicit LXCat kinematics currently require Collision_type VAHEDI_MCC.')
+            END IF
+         END DO
       END IF
 
    END SUBROUTINE INPUT_DATA_SANITY_CHECK

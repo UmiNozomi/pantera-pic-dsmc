@@ -1,0 +1,173 @@
+! Relativistic two-body scattering with a scalar laboratory-frame energy loss.
+!
+! This module deliberately has no dependency on the rest of PANTERA so that
+! the kinematics can be unit-tested in isolation.  The inelastic loss is
+! removed from the two particles' laboratory-frame translational energy while
+! their total three-momentum is held fixed.  The caller is responsible for
+! adding the same amount once to the tracked internal-energy reservoir.
+
+MODULE relativistic_collision_core
+
+   IMPLICIT NONE
+   PRIVATE
+
+   REAL(KIND=8), PARAMETER :: REL_C_LIGHT = 2.99792458d8
+
+   PUBLIC :: RELATIVISTIC_TWO_BODY_SCATTER
+
+CONTAINS
+
+   PURE SUBROUTINE RELATIVISTIC_TWO_BODY_SCATTER(M1, M2, C1, C2, ENERGY_LOSS, &
+                                                  SCATTER_DIRECTION, SUCCESS)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: M1, M2, ENERGY_LOSS
+      REAL(KIND=8), DIMENSION(3), INTENT(INOUT) :: C1, C2
+      REAL(KIND=8), DIMENSION(3), INTENT(IN) :: SCATTER_DIRECTION
+      LOGICAL, INTENT(OUT) :: SUCCESS
+
+      REAL(KIND=8), DIMENSION(3) :: P1, P2, P_TOTAL
+      REAL(KIND=8), DIMENSION(3) :: P1_STAR, P2_STAR
+      REAL(KIND=8), DIMENSION(3) :: P1_OUT, P2_OUT
+      REAL(KIND=8), DIMENSION(3) :: DIRECTION, BETA_DIRECTION
+      REAL(KIND=8) :: E1, E2, E_TOTAL, E_FINAL, E_CM
+      REAL(KIND=8) :: E1_CM, E2_CM, REST1, REST2
+      REAL(KIND=8) :: REST_SUM, REST_DIFF, PC_TOTAL
+      REAL(KIND=8) :: TERM1, TERM2, TERM3, TERM4, Q_C
+      REAL(KIND=8) :: DIRECTION_NORM, BETA_CM, BETA_CM2, GAMMA_CM
+      REAL(KIND=8) :: ENERGY_TOL
+
+      SUCCESS = .FALSE.
+
+      IF (M1 <= 0.d0 .OR. M2 <= 0.d0 .OR. ENERGY_LOSS < 0.d0) RETURN
+
+      DIRECTION_NORM = SQRT(SUM(SCATTER_DIRECTION*SCATTER_DIRECTION))
+      IF (DIRECTION_NORM <= TINY(1.d0)) RETURN
+      DIRECTION = SCATTER_DIRECTION/DIRECTION_NORM
+
+      CALL VELOCITY_TO_FOUR_MOMENTUM(M1, C1, E1, P1, SUCCESS)
+      IF (.NOT. SUCCESS) RETURN
+      CALL VELOCITY_TO_FOUR_MOMENTUM(M2, C2, E2, P2, SUCCESS)
+      IF (.NOT. SUCCESS) RETURN
+
+      P_TOTAL = P1 + P2
+      E_TOTAL = E1 + E2
+      E_FINAL = E_TOTAL - ENERGY_LOSS
+      PC_TOTAL = REL_C_LIGHT*SQRT(SUM(P_TOTAL*P_TOTAL))
+
+      ENERGY_TOL = 32.d0*EPSILON(1.d0)*MAX(E_TOTAL, TINY(1.d0))
+      IF (E_FINAL <= PC_TOTAL) THEN
+         SUCCESS = .FALSE.
+         RETURN
+      END IF
+
+      ! E_CM is evaluated as sqrt((E-pc)(E+pc)) to avoid cancellation.
+      E_CM = SQRT(MAX(0.d0, (E_FINAL-PC_TOTAL)*(E_FINAL+PC_TOTAL)))
+      REST1 = M1*REL_C_LIGHT*REL_C_LIGHT
+      REST2 = M2*REL_C_LIGHT*REL_C_LIGHT
+      REST_SUM = REST1 + REST2
+      REST_DIFF = ABS(REST1 - REST2)
+
+      IF (E_CM < REST_SUM-ENERGY_TOL) THEN
+         SUCCESS = .FALSE.
+         RETURN
+      END IF
+      E_CM = MAX(E_CM, REST_SUM)
+
+      ! Stable form of the Kallen two-body momentum.  Q_C is |p*|c.
+      TERM1 = MAX(0.d0, E_CM-REST_SUM)
+      TERM2 = E_CM + REST_SUM
+      TERM3 = MAX(0.d0, E_CM-REST_DIFF)
+      TERM4 = E_CM + REST_DIFF
+      Q_C = SQRT(TERM1*TERM2)*SQRT(TERM3*TERM4)/(2.d0*E_CM)
+
+      E1_CM = SQRT(REST1*REST1 + Q_C*Q_C)
+      E2_CM = SQRT(REST2*REST2 + Q_C*Q_C)
+      P1_STAR = (Q_C/REL_C_LIGHT)*DIRECTION
+      P2_STAR = -P1_STAR
+
+      BETA_CM2 = SUM(P_TOTAL*P_TOTAL)*REL_C_LIGHT*REL_C_LIGHT/ &
+                 (E_FINAL*E_FINAL)
+      IF (BETA_CM2 >= 1.d0) THEN
+         SUCCESS = .FALSE.
+         RETURN
+      END IF
+
+      IF (BETA_CM2 <= TINY(1.d0)) THEN
+         P1_OUT = P1_STAR
+         P2_OUT = P2_STAR
+         E1 = E1_CM
+         E2 = E2_CM
+      ELSE
+         BETA_CM = SQRT(BETA_CM2)
+         BETA_DIRECTION = P_TOTAL/SQRT(SUM(P_TOTAL*P_TOTAL))
+         GAMMA_CM = E_FINAL/E_CM
+         CALL BOOST_FROM_CM(P1_STAR, E1_CM, BETA_DIRECTION, BETA_CM, &
+                            GAMMA_CM, P1_OUT, E1)
+         CALL BOOST_FROM_CM(P2_STAR, E2_CM, BETA_DIRECTION, BETA_CM, &
+                            GAMMA_CM, P2_OUT, E2)
+      END IF
+
+      C1 = P1_OUT*REL_C_LIGHT*REL_C_LIGHT/E1
+      C2 = P2_OUT*REL_C_LIGHT*REL_C_LIGHT/E2
+
+      IF (SUM(C1*C1) >= REL_C_LIGHT*REL_C_LIGHT .OR. &
+          SUM(C2*C2) >= REL_C_LIGHT*REL_C_LIGHT) THEN
+         SUCCESS = .FALSE.
+         RETURN
+      END IF
+
+      SUCCESS = .TRUE.
+
+   END SUBROUTINE RELATIVISTIC_TWO_BODY_SCATTER
+
+
+   PURE SUBROUTINE VELOCITY_TO_FOUR_MOMENTUM(MASS, VELOCITY, ENERGY, MOMENTUM, SUCCESS)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: MASS
+      REAL(KIND=8), DIMENSION(3), INTENT(IN) :: VELOCITY
+      REAL(KIND=8), INTENT(OUT) :: ENERGY
+      REAL(KIND=8), DIMENSION(3), INTENT(OUT) :: MOMENTUM
+      LOGICAL, INTENT(OUT) :: SUCCESS
+
+      REAL(KIND=8) :: BETA2, GAMMA
+
+      BETA2 = SUM(VELOCITY*VELOCITY)/(REL_C_LIGHT*REL_C_LIGHT)
+      IF (BETA2 < 0.d0 .OR. BETA2 >= 1.d0) THEN
+         ENERGY = 0.d0
+         MOMENTUM = 0.d0
+         SUCCESS = .FALSE.
+         RETURN
+      END IF
+
+      GAMMA = 1.d0/SQRT(1.d0-BETA2)
+      ENERGY = GAMMA*MASS*REL_C_LIGHT*REL_C_LIGHT
+      MOMENTUM = GAMMA*MASS*VELOCITY
+      SUCCESS = .TRUE.
+
+   END SUBROUTINE VELOCITY_TO_FOUR_MOMENTUM
+
+
+   PURE SUBROUTINE BOOST_FROM_CM(P_STAR, E_STAR, BOOST_DIRECTION, BETA, GAMMA, &
+                                 P_LAB, E_LAB)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), DIMENSION(3), INTENT(IN) :: P_STAR, BOOST_DIRECTION
+      REAL(KIND=8), INTENT(IN) :: E_STAR, BETA, GAMMA
+      REAL(KIND=8), DIMENSION(3), INTENT(OUT) :: P_LAB
+      REAL(KIND=8), INTENT(OUT) :: E_LAB
+
+      REAL(KIND=8) :: P_PARALLEL, P_PARALLEL_LAB
+
+      P_PARALLEL = DOT_PRODUCT(P_STAR, BOOST_DIRECTION)
+      P_PARALLEL_LAB = GAMMA*(P_PARALLEL + BETA*E_STAR/REL_C_LIGHT)
+      P_LAB = P_STAR + (P_PARALLEL_LAB-P_PARALLEL)*BOOST_DIRECTION
+      E_LAB = GAMMA*(E_STAR + BETA*REL_C_LIGHT*P_PARALLEL)
+
+   END SUBROUTINE BOOST_FROM_CM
+
+END MODULE relativistic_collision_core

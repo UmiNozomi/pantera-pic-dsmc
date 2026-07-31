@@ -55,11 +55,11 @@ All_output_path:
 ! ========= Numerical parameters ====================
 
 Fnum:
-  1e4
+  1e5
 Timestep:
     1.0e-11
 Number_of_timesteps:
-    1000000
+    50000
 Stats_every:
     100
 RNG_seed:
@@ -86,13 +86,13 @@ Dump_traj_every:
 Dump_traj_number_per_proc:
    2
 Dump_bound_start:
-   950000
+   0
 Dump_bound_avgevery:
    50
 Dump_bound_numavgs:
    100
 Wall_energy_bins:
-   128
+   256
 Wall_energy_min_eV:
    1.0e-2
 Wall_energy_max_eV:
@@ -105,7 +105,7 @@ Checks_every:
 
 ! ============= 光谱诊断设置 (Spectral Diagnostics) =============
 Bool_spectral_diagnostics:
-    .TRUE.
+    .FALSE.
 
 Spectral_sampling_rate:
     1.0
@@ -122,7 +122,7 @@ Bool_ha_passive_diagnostic:
     .FALSE.
 
 Bool_reaction_statistics:
-    .FALSE.
+    .TRUE.
 ! ========= Multispecies ==============================
 
 Species_file:
@@ -143,7 +143,7 @@ Collision_type: ! [MCC / DSMC / BGK / NONE]
 ! DSMC VHS collisions
 
 MCC_background_dens:
-    1.8E20
+    2.5E20
 MCC_background_Ttra:
     300
 MCC_background_mixture:
@@ -175,10 +175,14 @@ SEE_boundary_mapping:
 ! ========= Initial particle seed ===================
 !Boundary_emit:
     !cathode  Electrons   1.0e15   1.0    1.0    1.0    11600.0    0.0    0.0    0.    0.
+!Volume_inject:
+    !Electrons   1.0e19   1.0    1.0    1.0    23200.0    0.0    0.0    0.    0.
+!Volume_inject:
+    !Ions   1.0e19   1.0    1.0    1.0    300.0    0.0    0.0    0.    0.
 Initial_particles:
-    Electrons   5.0e12   1.0    1.0    1.0    11600.0    0.0    0.0    0.    0.
-!Initial_particles:
-    !Ions   1.0e11   1.0    1.0    1.0    300.0    0.0    0.0    0.    0.
+    Electrons   1.0e12   1.0    1.0    1.0    300.0    0.0    0.0    0.    0.
+Initial_particles:
+    Ions   1.0e12   1.0    1.0    1.0    300.0    0.0    0.0    0.    0.
 Remove_particles_by_energy:
     1
     D2  11.0
@@ -205,7 +209,9 @@ Boundary_condition:
 Boundary_condition:
     cathode    energy_cll 300.00 0.95 0.98 100.0
 Boundary_condition:
-    cathode constant_current 0.01 -80000.0 5e7 0 0 1000 -900000 -5000
+    cathode constant_current 0.01 -30000.0 1e7 0.0 0.0 1000 -90000 -20000 0.8 1.0 10000
+Boundary_voltage_ramp:
+    cathode 0.0 2.0e-7
 Boundary_condition:
     cathode    react  cathode.wall
     

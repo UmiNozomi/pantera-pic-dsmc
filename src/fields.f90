@@ -25,6 +25,7 @@ MODULE fields
 
    USE global
    USE screen
+   USE boundary_control_core
    USE tools
    USE grid_and_partition
    USE secondary_electron_emission
@@ -58,6 +59,147 @@ MODULE fields
    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: CELL_NE, CELL_TE
 
    CONTAINS
+   SUBROUTINE COMPUTE_SURFACE_EVENT_CHARGE(IC, INCIDENT_S_ID, &
+                                             OUTGOING_S_ID, PRIMARY_SURVIVES, &
+                                             N_SECONDARY, Q_ION, Q_ELEC, Q_SEE)
+
+      IMPLICIT NONE
+
+      INTEGER, INTENT(IN) :: IC, INCIDENT_S_ID, OUTGOING_S_ID
+      INTEGER, INTENT(IN) :: N_SECONDARY
+      LOGICAL, INTENT(IN) :: PRIMARY_SURVIVES
+      REAL(KIND=8), INTENT(OUT) :: Q_ION, Q_ELEC, Q_SEE
+
+      REAL(KIND=8) :: CFNUM, OUT_CHARGE, OUT_WEIGHT
+      REAL(KIND=8) :: SEE_CHARGE, SEE_WEIGHT
+
+      Q_ION = 0.d0
+      Q_ELEC = 0.d0
+      Q_SEE = 0.d0
+
+      IF (IC < 1 .OR. IC > NCELLS) RETURN
+      IF (INCIDENT_S_ID < 1 .OR. INCIDENT_S_ID > N_SPECIES) RETURN
+
+      OUT_CHARGE = 0.d0
+      OUT_WEIGHT = 0.d0
+      IF (OUTGOING_S_ID >= 1 .AND. OUTGOING_S_ID <= N_SPECIES) THEN
+         OUT_CHARGE = SPECIES(OUTGOING_S_ID)%CHARGE
+         OUT_WEIGHT = SPECIES(OUTGOING_S_ID)%SPWT
+      END IF
+
+      SEE_CHARGE = 0.d0
+      SEE_WEIGHT = 0.d0
+      IF (SEE_ELECTRON_SPECIES_ID >= 1 .AND. &
+          SEE_ELECTRON_SPECIES_ID <= N_SPECIES) THEN
+         SEE_CHARGE = SPECIES(SEE_ELECTRON_SPECIES_ID)%CHARGE
+         SEE_WEIGHT = SPECIES(SEE_ELECTRON_SPECIES_ID)%SPWT
+      END IF
+
+      CALL SURFACE_EVENT_CHARGE_UNITS( &
+         SPECIES(INCIDENT_S_ID)%CHARGE, SPECIES(INCIDENT_S_ID)%SPWT, &
+         OUT_CHARGE, OUT_WEIGHT, PRIMARY_SURVIVES, N_SECONDARY, &
+         SEE_CHARGE, SEE_WEIGHT, Q_ION, Q_ELEC, Q_SEE)
+
+      CFNUM = FNUM
+      IF (BOOL_RADIAL_WEIGHTING) CFNUM = CELL_FNUM(IC)
+      Q_ION = QE*CFNUM*Q_ION
+      Q_ELEC = QE*CFNUM*Q_ELEC
+      Q_SEE = QE*CFNUM*Q_SEE
+
+   END SUBROUTINE COMPUTE_SURFACE_EVENT_CHARGE
+
+   ! Deposit only the charge actually transferred to a material surface.
+   ! Reflected/converted primaries and emitted SEE electrons leave charge
+   ! behind with the opposite sign and must therefore be subtracted.
+   SUBROUTINE DEPOSIT_NET_SURFACE_CHARGE(IC, X, Y, Z, FACE_PG, &
+                                         INCIDENT_S_ID, OUTGOING_S_ID, &
+                                         PRIMARY_SURVIVES, N_SECONDARY)
+
+      IMPLICIT NONE
+
+      INTEGER, INTENT(IN) :: IC, FACE_PG, INCIDENT_S_ID, OUTGOING_S_ID
+      INTEGER, INTENT(IN) :: N_SECONDARY
+      REAL(KIND=8), INTENT(IN) :: X, Y, Z
+      LOGICAL, INTENT(IN) :: PRIMARY_SURVIVES
+
+      INTEGER :: I, VP
+      REAL(KIND=8) :: K, NET_CHARGE, PSIP, RHO_Q
+      REAL(KIND=8) :: Q_ION, Q_ELEC, Q_SEE
+
+      IF (FACE_PG < 1 .OR. FACE_PG > N_GRID_BC) RETURN
+      IF (GRID_BC(FACE_PG)%FIELD_BC /= DIELECTRIC_BC .AND. &
+          GRID_BC(FACE_PG)%FIELD_BC /= CONDUCTIVE_BC) RETURN
+
+      CALL COMPUTE_SURFACE_EVENT_CHARGE(IC, INCIDENT_S_ID, OUTGOING_S_ID, &
+         PRIMARY_SURVIVES, N_SECONDARY, Q_ION, Q_ELEC, Q_SEE)
+      NET_CHARGE = Q_ION + Q_ELEC + Q_SEE
+      IF (ABS(NET_CHARGE) < 1.d-30) RETURN
+
+      K = 1.d0/(EPS0*EPS_SCALING**2)
+
+      IF (DIMS == 1) THEN
+         RHO_Q = K*NET_CHARGE/(YMAX-YMIN)/(ZMAX-ZMIN)
+         DO I = 1, 2
+            VP = U1D_GRID%CELL_NODES(I,IC)
+            PSIP = U1D_GRID%BASIS_COEFFS(1,I,IC)*X + &
+                    U1D_GRID%BASIS_COEFFS(2,I,IC)
+            SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
+         END DO
+      ELSE IF (DIMS == 2) THEN
+         RHO_Q = K*NET_CHARGE/(ZMAX-ZMIN)
+         DO I = 1, 3
+            VP = U2D_GRID%CELL_NODES(I,IC)
+            PSIP = U2D_GRID%BASIS_COEFFS(1,I,IC)*X + &
+                    U2D_GRID%BASIS_COEFFS(2,I,IC)*Y + &
+                    U2D_GRID%BASIS_COEFFS(3,I,IC)
+            SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
+         END DO
+      ELSE IF (DIMS == 3) THEN
+         RHO_Q = K*NET_CHARGE
+         DO I = 1, 4
+            VP = U3D_GRID%CELL_NODES(I,IC)
+            PSIP = U3D_GRID%BASIS_COEFFS(1,I,IC)*X + &
+                    U3D_GRID%BASIS_COEFFS(2,I,IC)*Y + &
+                    U3D_GRID%BASIS_COEFFS(3,I,IC)*Z + &
+                    U3D_GRID%BASIS_COEFFS(4,I,IC)
+            SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
+         END DO
+      END IF
+
+   END SUBROUTINE DEPOSIT_NET_SURFACE_CHARGE
+   SUBROUTINE TALLY_NET_BOUNDARY_CURRENT(IC, FACE_PG, INCIDENT_S_ID, &
+                                          OUTGOING_S_ID, PRIMARY_SURVIVES, &
+                                          N_SECONDARY)
+
+      IMPLICIT NONE
+
+      INTEGER, INTENT(IN) :: IC, FACE_PG, INCIDENT_S_ID, OUTGOING_S_ID
+      INTEGER, INTENT(IN) :: N_SECONDARY
+      LOGICAL, INTENT(IN) :: PRIMARY_SURVIVES
+      REAL(KIND=8) :: Q_ION, Q_ELEC, Q_SEE
+
+      IF (FACE_PG < 1 .OR. FACE_PG > N_GRID_BC) RETURN
+
+      CALL COMPUTE_SURFACE_EVENT_CHARGE(IC, INCIDENT_S_ID, OUTGOING_S_ID, &
+         PRIMARY_SURVIVES, N_SECONDARY, Q_ION, Q_ELEC, Q_SEE)
+
+      IF (GRID_BC(FACE_PG)%IS_CONSTANT_CURRENT) THEN
+         GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION = &
+            GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ION + Q_ION
+         GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC = &
+            GRID_BC(FACE_PG)%TIMESTEP_CHARGE_ELEC + Q_ELEC
+         GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE = &
+            GRID_BC(FACE_PG)%TIMESTEP_CHARGE_SEE + Q_SEE
+      END IF
+
+      IF (GRID_BC(FACE_PG)%FIELD_BC == SPICE_NODE_BC) THEN
+         GRID_BC(FACE_PG)%SPICE_NODE_CURRENT = &
+            GRID_BC(FACE_PG)%SPICE_NODE_CURRENT + (Q_ION + Q_ELEC + Q_SEE)/DT
+      END IF
+
+   END SUBROUTINE TALLY_NET_BOUNDARY_CURRENT
+
+
 
 
 
@@ -2869,7 +3011,7 @@ MODULE fields
       LOGICAL, DIMENSION(:), ALLOCATABLE :: REMOVE_PART
       REAL(KIND=8), DIMENSION(3) :: E, B
       REAL(KIND=8) ::V_PERP, VDUMMY, EROT, EVIB, VDOTN, WALL_TEMP
-      INTEGER :: S_ID
+      INTEGER :: S_ID, INCIDENT_S_ID
       LOGICAL :: HASCOLLIDED
       REAL(KIND=8) :: EDGE_X1, EDGE_Y1, EDGE_X2, EDGE_Y2
       INTEGER, DIMENSION(:), ALLOCATABLE :: LOCAL_BOUNDARY_COLL_COUNT, LOCAL_WALL_COLL_COUNT
@@ -3553,38 +3695,7 @@ MODULE fields
                      ! The particle is at the boundary of the domain
                      IF (FACE_PG .NE. -1) THEN
 
-                        CHARGE = SPECIES(part_adv(IP)%S_ID)%CHARGE
-                        IF (GRID_BC(FACE_PG)%FIELD_BC == DIELECTRIC_BC .AND. ABS(CHARGE) .GE. 1.d-6 .AND. FINAL) THEN
-                           K = QE/(EPS0*EPS_SCALING**2)
-                           IF (DIMS == 1) THEN
-                              RHO_Q = K*CHARGE*FNUM/(ZMAX-ZMIN)
-                              DO I = 1, 2
-                                 VP = U1D_GRID%CELL_NODES(I,IC)
-                                 PSIP = U1D_GRID%BASIS_COEFFS(1,I,IC)*part_adv(IP)%X &
-                                      + U1D_GRID%BASIS_COEFFS(2,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
-                              END DO
-                           ELSE IF (DIMS == 2) THEN
-                              RHO_Q = K*CHARGE*FNUM/(ZMAX-ZMIN)
-                              DO I = 1, 3
-                                 VP = U2D_GRID%CELL_NODES(I,IC)
-                                 PSIP = U2D_GRID%BASIS_COEFFS(1,I,IC)*part_adv(IP)%X &
-                                      + U2D_GRID%BASIS_COEFFS(2,I,IC)*part_adv(IP)%Y &
-                                      + U2D_GRID%BASIS_COEFFS(3,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
-                              END DO
-                           ELSE IF (DIMS == 3) THEN
-                              RHO_Q = K*CHARGE*FNUM
-                              DO I = 1, 4
-                                 VP = U3D_GRID%CELL_NODES(I,IC)
-                                 PSIP = U3D_GRID%BASIS_COEFFS(1,I,IC)*part_adv(IP)%X &
-                                      + U3D_GRID%BASIS_COEFFS(2,I,IC)*part_adv(IP)%Y &
-                                      + U3D_GRID%BASIS_COEFFS(3,I,IC)*part_adv(IP)%Z &
-                                      + U3D_GRID%BASIS_COEFFS(4,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
-                              END DO
-                           END IF
-                        END IF
+                        INCIDENT_S_ID = part_adv(IP)%S_ID
 
                         N_SEE_SECONDARY = 0
 
@@ -3730,6 +3841,11 @@ MODULE fields
                         ELSE
                            REMOVE_PART(IP) = .TRUE.
                            part_adv(IP)%DTRIM = 0.d0
+                        END IF
+                        IF (FINAL) THEN
+                           CALL DEPOSIT_NET_SURFACE_CHARGE(IC, part_adv(IP)%X, part_adv(IP)%Y, &
+                              part_adv(IP)%Z, FACE_PG, INCIDENT_S_ID, part_adv(IP)%S_ID, &
+                              .NOT. REMOVE_PART(IP), N_SEE_SECONDARY)
                         END IF
                      ELSE
                         REMOVE_PART(IP) = .TRUE.
@@ -5947,7 +6063,7 @@ MODULE fields
       LOGICAL, DIMENSION(:), ALLOCATABLE :: REMOVE_PART
       REAL(KIND=8), DIMENSION(3) :: E, B
       REAL(KIND=8) ::V_PERP, VDUMMY, EROT, EVIB, VDOTN, WALL_TEMP
-      INTEGER :: S_ID
+      INTEGER :: S_ID, INCIDENT_S_ID
       LOGICAL :: HASCOLLIDED
       REAL(KIND=8) :: EDGE_X1, EDGE_Y1, EDGE_X2, EDGE_Y2
       INTEGER, DIMENSION(:), ALLOCATABLE :: LOCAL_BOUNDARY_COLL_COUNT, LOCAL_WALL_COLL_COUNT
@@ -6404,38 +6520,7 @@ MODULE fields
                            CALL ADD_PARTICLE_ARRAY(particleNOW, NP_DUMP_PROC, part_dump)
                         END IF
 
-                        CHARGE = SPECIES(part_adv(IP)%S_ID)%CHARGE
-                        IF (GRID_BC(FACE_PG)%FIELD_BC == DIELECTRIC_BC .AND. ABS(CHARGE) .GE. 1.d-6 .AND. FINAL) THEN
-                           K = QE/(EPS0*EPS_SCALING**2)
-                           IF (DIMS == 1) THEN
-                              RHO_Q = K*CHARGE*FNUM/(ZMAX-ZMIN)
-                              DO I = 1, 2
-                                 VP = U1D_GRID%CELL_NODES(I,IC)
-                                 PSIP = U1D_GRID%BASIS_COEFFS(1,I,IC)*part_adv(IP)%X &
-                                      + U1D_GRID%BASIS_COEFFS(2,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
-                              END DO
-                           ELSE IF (DIMS == 2) THEN
-                              RHO_Q = K*CHARGE*FNUM/(ZMAX-ZMIN)
-                              DO I = 1, 3
-                                 VP = U2D_GRID%CELL_NODES(I,IC)
-                                 PSIP = U2D_GRID%BASIS_COEFFS(1,I,IC)*part_adv(IP)%X &
-                                      + U2D_GRID%BASIS_COEFFS(2,I,IC)*part_adv(IP)%Y &
-                                      + U2D_GRID%BASIS_COEFFS(3,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
-                              END DO
-                           ELSE IF (DIMS == 3) THEN
-                              RHO_Q = K*CHARGE*FNUM
-                              DO I = 1, 4
-                                 VP = U3D_GRID%CELL_NODES(I,IC)
-                                 PSIP = U3D_GRID%BASIS_COEFFS(1,I,IC)*part_adv(IP)%X &
-                                      + U3D_GRID%BASIS_COEFFS(2,I,IC)*part_adv(IP)%Y &
-                                      + U3D_GRID%BASIS_COEFFS(3,I,IC)*part_adv(IP)%Z &
-                                      + U3D_GRID%BASIS_COEFFS(4,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
-                              END DO
-                           END IF
-                        END IF
+                        INCIDENT_S_ID = part_adv(IP)%S_ID
 
                         ! Apply particle boundary condition
                         IF (GRID_BC(FACE_PG)%PARTICLE_BC == SPECULAR) THEN
@@ -6546,6 +6631,10 @@ MODULE fields
                            REMOVE_PART(IP) = .TRUE.
                            part_adv(IP)%DTRIM = 0.d0
                         END IF
+                        IF (FINAL) CALL DEPOSIT_NET_SURFACE_CHARGE(IC, part_adv(IP)%X, &
+                           part_adv(IP)%Y, part_adv(IP)%Z, FACE_PG, INCIDENT_S_ID, &
+                           part_adv(IP)%S_ID, .NOT. REMOVE_PART(IP), 0)
+
                      ELSE
                         REMOVE_PART(IP) = .TRUE.
                         part_adv(IP)%DTRIM = 0.d0
@@ -6927,10 +7016,9 @@ MODULE fields
       REAL(KIND=8) :: LOCAL_CHARGE_ION, LOCAL_CHARGE_ELEC, LOCAL_CHARGE_SEE
       REAL(KIND=8) :: GLOBAL_CHARGE_ION, GLOBAL_CHARGE_ELEC, GLOBAL_CHARGE_SEE
       REAL(KIND=8) :: CURRENT_ION, CURRENT_ELEC, CURRENT_SEE, CURRENT_TOTAL
-      REAL(KIND=8) :: SMOOTHED_CURRENT, CURRENT_ERROR, ERROR_DERIVATIVE
-      REAL(KIND=8) :: PID_OUTPUT, NEW_VOLTAGE, PID_SIGN, CONTROL_DT
-      REAL(KIND=8) :: CURRENT_RATIO, I_BLEND, BLEND_X, KI_EFFECTIVE
-      LOGICAL :: JUST_SWITCHED_TO_CC
+      REAL(KIND=8) :: SMOOTHED_CURRENT, NEW_VOLTAGE, PID_SIGN, CONTROL_DT
+      REAL(KIND=8) :: LIMIT_TOL, RAMP_ELAPSED
+      LOGICAL :: JUST_SWITCHED_TO_CC, AT_VOLTAGE_LIMIT
       
       ! Loop over all boundaries
       DO IPG = 1, N_GRID_BC
@@ -6979,6 +7067,45 @@ MODULE fields
                            SUM(GRID_BC(IPG)%CURRENT_WINDOW_ELEC) + &
                            SUM(GRID_BC(IPG)%CURRENT_WINDOW_SEE)
          SMOOTHED_CURRENT = SMOOTHED_CURRENT / DBLE(N_VALID_SAMPLES)
+         ! The startup ramp is a separate state preceding the original CV/CC
+         ! controller.  Its transient current is deliberately excluded from
+         ! the switching window; after the ramp, a fresh full window is
+         ! collected at INITIAL_VOLTAGE before target-current switching is
+         ! evaluated.
+         IF (GRID_BC(IPG)%STARTUP_RAMP_ENABLED .AND. &
+             .NOT. GRID_BC(IPG)%STARTUP_RAMP_COMPLETE) THEN
+            RAMP_ELAPSED = DBLE(tID)*DT
+            IF (RAMP_ELAPSED < GRID_BC(IPG)%STARTUP_RAMP_TIME) THEN
+               GRID_BC(IPG)%WALL_POTENTIAL = SMOOTH_STARTUP_VOLTAGE( &
+                  RAMP_ELAPSED, GRID_BC(IPG)%STARTUP_RAMP_TIME, &
+                  GRID_BC(IPG)%STARTUP_RAMP_VOLTAGE, &
+                  GRID_BC(IPG)%INITIAL_VOLTAGE)
+            ELSE
+               GRID_BC(IPG)%WALL_POTENTIAL = GRID_BC(IPG)%INITIAL_VOLTAGE
+               GRID_BC(IPG)%STARTUP_RAMP_COMPLETE = .TRUE.
+               IF (PROC_ID == 0) THEN
+                  WRITE(*,*) '> Startup voltage ramp completed at timestep', tID
+                  WRITE(*,*) '  Boundary: ', &
+                     TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME)
+                  WRITE(*,*) '  CV voltage:', &
+                     GRID_BC(IPG)%INITIAL_VOLTAGE, ' V'
+               END IF
+            END IF
+
+            GRID_BC(IPG)%CURRENT_WINDOW_ION = 0.d0
+            GRID_BC(IPG)%CURRENT_WINDOW_ELEC = 0.d0
+            GRID_BC(IPG)%CURRENT_WINDOW_SEE = 0.d0
+            GRID_BC(IPG)%WINDOW_INDEX = 0
+            GRID_BC(IPG)%WINDOW_SAMPLE_COUNT = 0
+            GRID_BC(IPG)%STEPS_SINCE_PID_UPDATE = 0
+            GRID_BC(IPG)%ERROR_INTEGRAL = 0.d0
+            GRID_BC(IPG)%ERROR_PREV = 0.d0
+            GRID_BC(IPG)%CC_MODE_ACTIVE = .FALSE.
+            GRID_BC(IPG)%CC_CONTROL_LIMITED = .FALSE.
+            GRID_BC(IPG)%CC_VOLTAGE_LIMIT_WARNED = .FALSE.
+            CYCLE
+         END IF
+
 
          ! Do not act on the controller until a full averaging window has been collected.
          IF (GRID_BC(IPG)%WINDOW_SAMPLE_COUNT < GRID_BC(IPG)%SLIDING_WINDOW_SIZE) THEN
@@ -7000,88 +7127,76 @@ MODULE fields
          CONTROL_DT = DT * DBLE(CONTROL_INTERVAL_STEPS)
          GRID_BC(IPG)%STEPS_SINCE_PID_UPDATE = 0
          
-         ! ===== Step 3: State Machine =====
-         JUST_SWITCHED_TO_CC = .FALSE.
+         ! Preserve the configured startup sequence: remain at the initial
+         ! constant voltage until the smoothed current first reaches target.
          IF (.NOT. GRID_BC(IPG)%CC_MODE_ACTIVE) THEN
-            ! CV Mode: Check if we should switch to CC mode
             IF (ABS(SMOOTHED_CURRENT) >= ABS(GRID_BC(IPG)%TARGET_CURRENT)) THEN
-               GRID_BC(IPG)%CC_MODE_ACTIVE = .TRUE.
                JUST_SWITCHED_TO_CC = .TRUE.
-               ! Initialize PID state for bumpless transfer
-               GRID_BC(IPG)%ERROR_INTEGRAL = 0.d0
-               IF (PROC_ID == 0) THEN
-                  WRITE(*,*) '> Constant current BC switched to CC mode at timestep', tID
-                  WRITE(*,*) '  Boundary: ', TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME)
-                  WRITE(*,*) '  Smoothed current:', SMOOTHED_CURRENT, ' A'
-                  WRITE(*,*) '  Target current:', GRID_BC(IPG)%TARGET_CURRENT, ' A'
-               END IF
             ELSE
-               ! Stay in CV mode: voltage = initial voltage
+               JUST_SWITCHED_TO_CC = .FALSE.
                GRID_BC(IPG)%WALL_POTENTIAL = GRID_BC(IPG)%INITIAL_VOLTAGE
+               GRID_BC(IPG)%CC_CONTROL_LIMITED = .FALSE.
+               CYCLE
+            END IF
+         ELSE
+            JUST_SWITCHED_TO_CC = .FALSE.
+         END IF
+         IF (JUST_SWITCHED_TO_CC) THEN
+            GRID_BC(IPG)%CC_MODE_ACTIVE = .TRUE.
+            GRID_BC(IPG)%ERROR_INTEGRAL = 0.d0
+            GRID_BC(IPG)%CC_CONTROL_LIMITED = .FALSE.
+            GRID_BC(IPG)%CC_VOLTAGE_LIMIT_WARNED = .FALSE.
+            IF (PROC_ID == 0) THEN
+               WRITE(*,*) '> Constant current regulation started at timestep', tID
+               WRITE(*,*) '  Boundary: ', TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME)
+               WRITE(*,*) '  Smoothed current:', SMOOTHED_CURRENT, ' A'
+               WRITE(*,*) '  Target current:', GRID_BC(IPG)%TARGET_CURRENT, ' A'
             END IF
          END IF
-                  ! ===== Step 4: PID Control (only in CC mode) =====
-          IF (GRID_BC(IPG)%CC_MODE_ACTIVE) THEN
-             ! Compute error (target - measured)
-             CURRENT_ERROR = GRID_BC(IPG)%TARGET_CURRENT - SMOOTHED_CURRENT
-
-             ! Anti-windup / PI scheduling:
-             ! stay in P-only mode while the measured current is still far from the target,
-             ! then smoothly introduce integral action as |I| approaches |I_target|.
-             IF (ABS(GRID_BC(IPG)%TARGET_CURRENT) > 1.d-20) THEN
-                CURRENT_RATIO = ABS(SMOOTHED_CURRENT) / ABS(GRID_BC(IPG)%TARGET_CURRENT)
-             ELSE
-                CURRENT_RATIO = 1.d0
-             END IF
-
-             BLEND_X = (CURRENT_RATIO - GRID_BC(IPG)%PID_I_ACTIVATE_RATIO) / &
-                       (GRID_BC(IPG)%PID_I_FULL_RATIO - GRID_BC(IPG)%PID_I_ACTIVATE_RATIO)
-             BLEND_X = MAX(0.d0, MIN(1.d0, BLEND_X))
-             I_BLEND = BLEND_X * BLEND_X * (3.d0 - 2.d0 * BLEND_X)
-             KI_EFFECTIVE = GRID_BC(IPG)%PID_KI * I_BLEND
-             
-             ! Update integral term
-             GRID_BC(IPG)%ERROR_INTEGRAL = GRID_BC(IPG)%ERROR_INTEGRAL + &
-                                           I_BLEND * CURRENT_ERROR * CONTROL_DT
-             
-             ! Compute derivative term
-             IF (JUST_SWITCHED_TO_CC) THEN
-                ERROR_DERIVATIVE = 0.d0
-             ELSE
-                ERROR_DERIVATIVE = (CURRENT_ERROR - GRID_BC(IPG)%ERROR_PREV) / CONTROL_DT
-             END IF
-             
-             ! PID formula
-             PID_OUTPUT = GRID_BC(IPG)%PID_KP * CURRENT_ERROR + &
-                         KI_EFFECTIVE * GRID_BC(IPG)%ERROR_INTEGRAL + &
-                         GRID_BC(IPG)%PID_KD * ERROR_DERIVATIVE
-             
-             ! Determine PID sign based on voltage polarity
+             ! Fixed control direction for the validated negative-cathode mode.
              ! For CATHODES (negative voltage attracting positive ions):
              !   - When I < I_target: error > 0, PID_OUTPUT > 0
              !   - Need voltage to become MORE negative (ΔV < 0)
              !   - Therefore invert PID output sign (PID_SIGN = -1)
-             ! For ANODES (positive voltage): normal PID direction (PID_SIGN = +1)
-             IF (GRID_BC(IPG)%INITIAL_VOLTAGE < 0.d0) THEN
-                PID_SIGN = -1.d0   ! Invert for cathodes (negative voltage)
-             ELSE
-                PID_SIGN = +1.d0   ! Normal for anodes (positive voltage)
-             END IF
-             
-             ! Update voltage with correct sign
-             NEW_VOLTAGE = GRID_BC(IPG)%WALL_POTENTIAL + PID_SIGN * PID_OUTPUT
-             
-             ! Apply voltage clamping for safety
-             IF (GRID_BC(IPG)%APPLY_VOLTAGE_LIMITS) THEN
-                NEW_VOLTAGE = MAX(GRID_BC(IPG)%VOLTAGE_MIN, &
-                                  MIN(GRID_BC(IPG)%VOLTAGE_MAX, NEW_VOLTAGE))
-             END IF
-             
-             GRID_BC(IPG)%WALL_POTENTIAL = NEW_VOLTAGE
-             
-             ! Update previous error
-             GRID_BC(IPG)%ERROR_PREV = CURRENT_ERROR
-          END IF
+             PID_SIGN = -1.d0
+
+         CALL ERROR_DRIVEN_PID_STEP( &
+            GRID_BC(IPG)%TARGET_CURRENT, SMOOTHED_CURRENT, &
+            GRID_BC(IPG)%PID_KP, GRID_BC(IPG)%PID_KI, &
+            GRID_BC(IPG)%PID_KD, CONTROL_DT, &
+            GRID_BC(IPG)%WALL_POTENTIAL, &
+            PID_SIGN, GRID_BC(IPG)%MAX_VOLTAGE_STEP, &
+            GRID_BC(IPG)%APPLY_VOLTAGE_LIMITS, &
+            GRID_BC(IPG)%VOLTAGE_MIN, GRID_BC(IPG)%VOLTAGE_MAX, &
+            JUST_SWITCHED_TO_CC, GRID_BC(IPG)%ERROR_INTEGRAL, &
+            GRID_BC(IPG)%ERROR_PREV, NEW_VOLTAGE, &
+            GRID_BC(IPG)%CC_CONTROL_LIMITED)
+
+         AT_VOLTAGE_LIMIT = .FALSE.
+         IF (GRID_BC(IPG)%APPLY_VOLTAGE_LIMITS) THEN
+            LIMIT_TOL = 16.d0*EPSILON(1.d0)*MAX(1.d0, ABS(NEW_VOLTAGE), &
+               ABS(GRID_BC(IPG)%VOLTAGE_MIN), ABS(GRID_BC(IPG)%VOLTAGE_MAX))
+            AT_VOLTAGE_LIMIT = &
+               ABS(NEW_VOLTAGE - GRID_BC(IPG)%VOLTAGE_MIN) <= LIMIT_TOL .OR. &
+               ABS(NEW_VOLTAGE - GRID_BC(IPG)%VOLTAGE_MAX) <= LIMIT_TOL
+         END IF
+
+         IF (AT_VOLTAGE_LIMIT) THEN
+            GRID_BC(IPG)%CC_CONTROL_LIMITED = .TRUE.
+            IF (.NOT. GRID_BC(IPG)%CC_VOLTAGE_LIMIT_WARNED) THEN
+               IF (PROC_ID == 0) THEN
+                  WRITE(*,*) '> WARNING: constant-current voltage limit reached at timestep', tID
+                  WRITE(*,*) '  Boundary: ', TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME)
+                  WRITE(*,*) '  Voltage:', NEW_VOLTAGE, ' V'
+                  WRITE(*,*) '  Target/current/error:', &
+                     GRID_BC(IPG)%TARGET_CURRENT, SMOOTHED_CURRENT, &
+                     GRID_BC(IPG)%TARGET_CURRENT - SMOOTHED_CURRENT, ' A'
+               END IF
+               GRID_BC(IPG)%CC_VOLTAGE_LIMIT_WARNED = .TRUE.
+            END IF
+         END IF
+
+         GRID_BC(IPG)%WALL_POTENTIAL = NEW_VOLTAGE
          
       END DO
       

@@ -1,7 +1,14 @@
 results/
+results1/
+results2/
+results3/
+results5/
+results6/
 *.o
 *.mod
 *.Identifier
 back/
 pantera.exe
 *.tar
+__pycache__/
+*.pyc

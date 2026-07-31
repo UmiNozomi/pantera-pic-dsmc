@@ -4,11 +4,11 @@
 
 ! Reaction 1: 电子-D2 弹性碰撞 (Elastic collision)
 e- + D2 --> e- + D2
-lxcat 0.0 ELASTIC.txt
+lxcat 0.0 ELASTIC.txt elastic
 
 ! Reaction 2: 电子-D2 振动激发 (Vibrational excitation)
 e- + D2 --> e- + D2
-lxcat 0.516 EXCITATION2.txt
+lxcat 0.3712 EXCITATION2.txt vibrational
 
 ! Reaction 3: 电子-D2 电离 (Ionization)
 e- + D2 --> e- + e- + D2+
@@ -34,17 +34,18 @@ lxcat 3.000000e+01 H2-08-EXCITATION.txt
 
 ! Reaction 8: D+-D2 弹性碰撞
 D+ + D2 --> D+ + D2
-lxcat 0.000000e+00 H2-10-ELASTIC.txt
+lxcat 0.000000e+00 H2-10-ELASTIC.txt elastic
+
+! Reaction 9:
+D+ + D2 --> D+ + D2+ + e-
+lxcat 2.320500e+01 H2-09-IONIZATION.txt
+
 
 ! ===== D2+ 碰撞反应 (D2+ impact reactions) =====
 
-! Reaction 9: D2+-D2 生成 D3+
+! Reaction 10: D2+-D2 生成 D3+
 D2+ + D2 --> D3+ + D
 lxcat 0.000000e+00 H2-11-IONIZATION.txt
-
-! Reaction 10: D2+-D2 弹性碰撞/动量转移
-D2+ + D2 --> D2+ + D2
-lxcat 0.000000e+00 H2plus-H2-MOMENTUM_TRANSFER.txt
 
 ! Reaction 11: D2+-D2 电荷交换
 D2+ + D2 -CEX-> D2 + D2+
@@ -82,7 +83,7 @@ lxcat 6.200000e+01 H2-23-EXCITATION.txt
 
 ! Reaction 19: D3+-D2 弹性碰撞
 D3+ + D2 --> D3+ + D2
-lxcat 0.000000e+00 H2-25-ELASTIC.txt
+lxcat 0.000000e+00 H2-25-ELASTIC.txt elastic
 
 ! ===== D 碰撞反应 (D atom impact reactions) =====
 
@@ -100,7 +101,7 @@ lxcat 2.300000e+01 H2-33-EXCITATION.txt
 
 ! Reaction 23: D-D2 弹性碰撞
 D + D2 --> D + D2
-lxcat 0.000000e+00 H2-36-ELASTIC.txt
+lxcat 0.000000e+00 H2-36-ELASTIC.txt elastic
 
 ! ===== D2 碰撞反应 (D2 fast/excited impact reactions) =====
 
@@ -118,7 +119,7 @@ lxcat 1.173625e+01 H2-44-EXCITATION.txt
 
 ! Reaction 27: D2-D2 弹性碰撞
 D2 + D2 --> D2 + D2
-lxcat 0.000000e+00 H2-46-ELASTIC.txt
+lxcat 0.000000e+00 H2-46-ELASTIC.txt elastic
 
 ! ===== D-D 核聚变普通反应 (D-D Fusion Product Reactions) =====
 ! Bosch & Hale total cross section, split 50/50 into the two product branches.

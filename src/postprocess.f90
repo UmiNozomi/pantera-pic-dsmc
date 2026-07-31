@@ -2526,7 +2526,10 @@ MODULE postprocess
                                                       // ' I_tot_' // TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME) &
                                                       // ' I_ion_' // TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME) &
                                                       // ' I_elec_' // TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME) &
-                                                      // ' I_see_' // TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME)
+                                                      // ' I_see_' // TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME) &
+                                                      // ' I_target_' // TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME) &
+                                                      // ' I_error_' // TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME) &
+                                                      // ' CC_limited_' // TRIM(GRID_BC(IPG)%PHYSICAL_GROUP_NAME)
                END IF
             END DO
 
@@ -2555,6 +2558,9 @@ MODULE postprocess
                CURRENT_TOTAL_SMOOTH = CURRENT_ION_SMOOTH + CURRENT_ELEC_SMOOTH + CURRENT_SEE_SMOOTH
                WRITE(54331,'(5(ES14.6))', ADVANCE='NO') GRID_BC(IPG)%WALL_POTENTIAL, &
                      CURRENT_TOTAL_SMOOTH, CURRENT_ION_SMOOTH, CURRENT_ELEC_SMOOTH, CURRENT_SEE_SMOOTH
+               WRITE(54331,'(3(ES14.6))', ADVANCE='NO') GRID_BC(IPG)%TARGET_CURRENT, &
+                     GRID_BC(IPG)%TARGET_CURRENT - CURRENT_TOTAL_SMOOTH, &
+                     MERGE(1.d0, 0.d0, GRID_BC(IPG)%CC_CONTROL_LIMITED)
             END IF
          END DO
          WRITE(54331,*)  ! New line

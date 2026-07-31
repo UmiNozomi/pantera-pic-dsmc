@@ -238,7 +238,7 @@ MODULE global
       REAL(KIND=8) :: CAPACITANCE
 
       REAL(KIND=8) :: SPICE_NODE_POTENTIAL = 0.d0
-      REAL(KIND=8) :: SPICE_NODE_CURRENT
+      REAL(KIND=8) :: SPICE_NODE_CURRENT = 0.d0
 
       REAL(KIND=8), DIMENSION(2) :: TRANSLATEVEC
 
@@ -259,12 +259,19 @@ MODULE global
       REAL(KIND=8) :: INITIAL_VOLTAGE           ! Initial voltage for CV mode [V]
       REAL(KIND=8) :: PID_KP, PID_KI, PID_KD    ! PID coefficients
       INTEGER :: SLIDING_WINDOW_SIZE = 10        ! Number of timesteps for averaging
-      REAL(KIND=8) :: PID_I_ACTIVATE_RATIO = 0.8d0 ! Below this |I|/|I_target| use P-only control
-      REAL(KIND=8) :: PID_I_FULL_RATIO = 1.0d0     ! Above this ratio full integral action is enabled
+      REAL(KIND=8) :: PID_I_ACTIVATE_RATIO = 0.8d0 ! Deprecated input compatibility
+      REAL(KIND=8) :: PID_I_FULL_RATIO = 1.0d0     ! Deprecated input compatibility
+      REAL(KIND=8) :: MAX_VOLTAGE_STEP = HUGE(1.d0) ! Maximum change per control update [V]
       
       ! State machine
-      LOGICAL :: CC_MODE_ACTIVE = .FALSE.        ! FALSE = CV mode, TRUE = CC mode
-      
+      LOGICAL :: CC_MODE_ACTIVE = .FALSE.        ! TRUE after the first complete current window
+      LOGICAL :: CC_CONTROL_LIMITED = .FALSE.    ! Slew or absolute voltage limit is active
+      LOGICAL :: CC_VOLTAGE_LIMIT_WARNED = .FALSE. ! TRUE after the one-shot voltage-limit warning
+      LOGICAL :: STARTUP_RAMP_ENABLED = .FALSE.  ! Smooth voltage ramp precedes the CV stage
+      LOGICAL :: STARTUP_RAMP_COMPLETE = .TRUE.  ! TRUE once INITIAL_VOLTAGE has been reached
+      REAL(KIND=8) :: STARTUP_RAMP_VOLTAGE = 0.d0 ! Voltage at the beginning of the ramp [V]
+      REAL(KIND=8) :: STARTUP_RAMP_TIME = 0.d0    ! Ramp duration [s]
+
       ! Sliding window for current filtering
       REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: CURRENT_WINDOW_ION
       REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: CURRENT_WINDOW_ELEC
@@ -646,6 +653,13 @@ MODULE global
    ENUM, BIND(C)
       ENUMERATOR FIXED_RATE, TCE, LXCAT
    END ENUM
+   ! Post-collision kinematics used by tabulated reactions.  The statistical
+   ! model preserves the historical Borgnakke-Larsen behaviour, while the
+   ! explicit models avoid treating electron collisions as complete
+   ! heavy-particle internal-energy relaxation.
+   ENUM, BIND(C)
+      ENUMERATOR REACTION_KIN_STATISTICAL, REACTION_KIN_ELASTIC, REACTION_KIN_VIBRATIONAL
+   END ENUM
    
    TYPE REACTIONS_DATA_STRUCTURE
       INTEGER(KIND(FIXED_RATE)) :: TYPE = FIXED_RATE
@@ -658,6 +672,7 @@ MODULE global
       REAL(KIND=8) :: A, N, EA
       REAL(KIND=8) :: Q_VALUE = 0.d0  ! Exothermic energy release [J]
       REAL(KIND=8) :: C1, C2, C3
+      INTEGER(KIND(REACTION_KIN_STATISTICAL)) :: KINEMATICS = REACTION_KIN_STATISTICAL
       INTEGER :: N_PROD
       LOGICAL :: IS_CEX
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TABLE_ENERGY
